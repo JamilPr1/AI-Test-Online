@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  questions,
   TEST_DURATION_MINUTES,
   isQuestionAnswered,
-  type Question,
   type AnswerValue,
 } from '@/lib/questions';
+import type { ClientQuestion } from '@/lib/shuffle';
 
 type Answers = Record<string, AnswerValue>;
 
@@ -18,6 +17,7 @@ interface TestSession {
 
 interface TestInterfaceProps {
   session: TestSession;
+  examQuestions: ClientQuestion[];
   onSubmit: (answers: Answers) => Promise<void>;
   submitting: boolean;
   proctorWarnings: number;
@@ -25,13 +25,14 @@ interface TestInterfaceProps {
 
 export default function TestInterface({
   session,
+  examQuestions,
   onSubmit,
   submitting,
   proctorWarnings,
 }: TestInterfaceProps) {
   const [answers, setAnswers] = useState<Answers>(() => {
     const initial: Answers = {};
-    for (const q of questions) {
+    for (const q of examQuestions) {
       if (q.type === 'coding') {
         initial[q.id] = q.starterCode;
       }
@@ -64,9 +65,13 @@ export default function TestInterface({
     return () => clearInterval(interval);
   }, [session.startedAt, onSubmit]);
 
-  const current = questions[currentIndex];
-  const answeredCount = questions.filter((q) =>
-    isQuestionAnswered(q, answers[q.id])
+  const current = examQuestions[currentIndex];
+  const answeredCount = examQuestions.filter((q) =>
+    isQuestionAnswered(
+      q,
+      answers[q.id],
+      q.type === 'coding' ? q.starterCode : undefined
+    )
   ).length;
 
   const setMcqAnswer = (questionId: string, value: number) => {
@@ -83,8 +88,8 @@ export default function TestInterface({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const mcqCount = questions.filter((q) => q.type === 'mcq').length;
-  const codingCount = questions.filter((q) => q.type === 'coding').length;
+  const mcqCount = examQuestions.filter((q) => q.type === 'mcq').length;
+  const codingCount = examQuestions.filter((q) => q.type === 'coding').length;
 
   return (
     <div className="space-y-6">
@@ -92,7 +97,7 @@ export default function TestInterface({
         <div>
           <p className="text-sm text-slate-500">AI Developer Screening</p>
           <p className="font-semibold text-slate-900">
-            Question {currentIndex + 1} of {questions.length}
+            Question {currentIndex + 1} of {examQuestions.length}
             <span className="text-slate-400 font-normal text-sm ml-2">
               ({mcqCount} MCQ · {codingCount} coding)
             </span>
@@ -112,7 +117,7 @@ export default function TestInterface({
             {formatTime(timeLeft)}
           </div>
           <div className="text-sm text-slate-500">
-            {answeredCount}/{questions.length} answered
+            {answeredCount}/{examQuestions.length} answered
           </div>
         </div>
       </div>
@@ -120,13 +125,17 @@ export default function TestInterface({
       <div className="w-full bg-slate-200 rounded-full h-2">
         <div
           className="bg-brand-600 h-2 rounded-full transition-all"
-          style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+          style={{ width: `${((currentIndex + 1) / examQuestions.length) * 100}%` }}
         />
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {questions.map((q, i) => {
-          const answered = isQuestionAnswered(q, answers[q.id]);
+        {examQuestions.map((q, i) => {
+          const answered = isQuestionAnswered(
+            q,
+            answers[q.id],
+            q.type === 'coding' ? q.starterCode : undefined
+          );
           const isCoding = q.type === 'coding';
           return (
             <button
@@ -199,7 +208,7 @@ export default function TestInterface({
         </button>
 
         <div className="flex gap-3">
-          {currentIndex < questions.length - 1 ? (
+          {currentIndex < examQuestions.length - 1 ? (
             <button
               type="button"
               className="btn-primary"
@@ -225,8 +234,8 @@ export default function TestInterface({
           <div className="card p-6 max-w-md w-full">
             <h3 className="text-lg font-semibold mb-2">Submit your test?</h3>
             <p className="text-slate-600 text-sm mb-4">
-              You have answered {answeredCount} of {questions.length} questions.
-              {answeredCount < questions.length &&
+              You have answered {answeredCount} of {examQuestions.length} questions.
+              {answeredCount < examQuestions.length &&
                 ' Unanswered questions will receive reduced or zero points.'}
             </p>
             <div className="flex gap-3 justify-end">
@@ -259,7 +268,7 @@ function McqOptions({
   answer,
   onSelect,
 }: {
-  question: Question & { type: 'mcq' };
+  question: ClientQuestion & { type: 'mcq' };
   answer: number | null | undefined;
   onSelect: (id: string, value: number) => void;
 }) {
@@ -293,7 +302,7 @@ function CodingEditor({
   code,
   onChange,
 }: {
-  question: Question & { type: 'coding' };
+  question: ClientQuestion & { type: 'coding' };
   code: string;
   onChange: (code: string) => void;
 }) {

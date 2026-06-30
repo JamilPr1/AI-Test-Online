@@ -1,7 +1,9 @@
 import CandidateForm from '@/components/CandidateForm';
 import Link from 'next/link';
+import { getTotalPoints, MCQ_PER_EXAM } from '@/lib/questions';
 
 export default function HomePage() {
+  const totalPoints = getTotalPoints();
   return (
     <div className="min-h-screen">
       <header className="bg-white border-b border-slate-200">
@@ -47,11 +49,11 @@ export default function HomePage() {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Questions</dt>
-                  <dd className="font-medium">10 MCQ + 2 coding</dd>
+                  <dd className="font-medium">{MCQ_PER_EXAM} MCQ + 2 coding</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Total Points</dt>
-                  <dd className="font-medium">30 points</dd>
+                  <dd className="font-medium">{totalPoints} points</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Passing Score</dt>

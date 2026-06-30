@@ -54,6 +54,7 @@ export default function CandidateForm() {
         JSON.stringify({
           sessionId: data.sessionId,
           startedAt: data.startedAt,
+          examPaper: data.examPaper,
           candidate: form,
         })
       );
@@ -158,7 +159,7 @@ export default function CandidateForm() {
       <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900">
         <p className="font-semibold mb-2">Test Integrity Policy</p>
         <ul className="list-disc list-inside space-y-1 text-amber-800">
-          <li>Duration: 60 minutes · 10 MCQ + 2 coding exercises · Auto-graded</li>
+          <li>Duration: 60 minutes · 15 MCQ + 2 coding exercises · Auto-graded</li>
           <li>Tab switches, focus changes, and external links are monitored</li>
           <li>Copy/paste and right-click are disabled during the test</li>
           <li>Fullscreen mode is recommended for the best experience</li>

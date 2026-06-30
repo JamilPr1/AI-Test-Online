@@ -1,3 +1,6 @@
+import type { ShuffleMap } from './shuffle';
+import { gradeMcqWithShuffle } from './shuffle';
+
 export type QuestionType = 'mcq' | 'coding';
 
 export interface McqQuestion {
@@ -39,26 +42,28 @@ export const TEST_DURATION_MINUTES = 60;
 
 export const PASSING_PERCENTAGE = 60;
 
-export const mcqQuestions: McqQuestion[] = [
+export const MCQ_PER_EXAM = 15;
+
+/** Pool of MCQs — each exam draws 15 with shuffled answer order per candidate */
+export const mcqQuestionPool: McqQuestion[] = [
   {
     id: 'q1',
     category: 'Machine Learning',
     type: 'mcq',
     question:
       'Which TensorFlow API is most commonly used for building and training deep neural networks with high-level abstractions?',
-    options: ['TensorFlow Lite', 'Keras (tf.keras)', 'TensorFlow Serving', 'XLA Compiler'],
-    correctAnswer: 1,
+    options: ['Keras (tf.keras)', 'TensorFlow Lite', 'XLA Compiler', 'TensorFlow Serving'],
+    correctAnswer: 0,
     points: 2,
-    explanation: 'tf.keras provides a high-level API for building and training models in TensorFlow.',
   },
   {
     id: 'q2',
     category: 'Unsupervised Learning',
     type: 'mcq',
     question:
-      'Which unsupervised learning algorithm is best suited for grouping customers into segments based on purchasing behavior without labeled data?',
-    options: ['Linear Regression', 'K-Means Clustering', 'Logistic Regression', 'Random Forest Classifier'],
-    correctAnswer: 1,
+      'A retail dataset has no labels. Which method best discovers natural customer segments for targeted marketing?',
+    options: ['Logistic Regression', 'Random Forest', 'K-Means Clustering', 'Linear Regression'],
+    correctAnswer: 2,
     points: 2,
   },
   {
@@ -66,9 +71,9 @@ export const mcqQuestions: McqQuestion[] = [
     category: 'Big Data',
     type: 'mcq',
     question:
-      'In a Hadoop ecosystem, which component is primarily responsible for distributed storage of large datasets?',
-    options: ['MapReduce', 'HDFS', 'YARN', 'Hive'],
-    correctAnswer: 1,
+      'In Hadoop, which component provides fault-tolerant distributed storage for petabyte-scale datasets?',
+    options: ['YARN', 'Hive', 'MapReduce', 'HDFS'],
+    correctAnswer: 3,
     points: 2,
   },
   {
@@ -76,14 +81,14 @@ export const mcqQuestions: McqQuestion[] = [
     category: 'Spark',
     type: 'mcq',
     question:
-      'What is the primary advantage of Apache Spark over traditional MapReduce for iterative machine learning workloads?',
+      'Why does Spark outperform MapReduce for iterative ML algorithms such as gradient descent?',
     options: [
-      'Spark only works on structured data',
-      'In-memory computation reduces disk I/O between iterations',
-      'Spark cannot run on Hadoop clusters',
-      'MapReduce is always faster for ML',
+      'In-memory RDD/DataFrame caching reduces repeated disk reads between iterations',
+      'Spark eliminates the need for serialization',
+      'MapReduce cannot run on commodity hardware',
+      'Spark only supports batch processing',
     ],
-    correctAnswer: 1,
+    correctAnswer: 0,
     points: 2,
   },
   {
@@ -91,9 +96,9 @@ export const mcqQuestions: McqQuestion[] = [
     category: 'NLP',
     type: 'mcq',
     question:
-      'Which NLP technique converts text into numerical vectors that capture semantic meaning, commonly used for similarity search and classification?',
-    options: ['TF-IDF only', 'Word Embeddings (e.g., Word2Vec, BERT)', 'Regex parsing', 'SQL joins'],
-    correctAnswer: 1,
+      'For semantic similarity between documents, which representation is generally most effective?',
+    options: ['Regex tokenization', 'SQL full-text search', 'TF-IDF alone', 'Contextual embeddings (e.g., BERT)'],
+    correctAnswer: 3,
     points: 2,
   },
   {
@@ -101,9 +106,9 @@ export const mcqQuestions: McqQuestion[] = [
     category: 'AWS & Deployment',
     type: 'mcq',
     question:
-      'Which AWS service is most appropriate for deploying a trained ML model as a scalable REST API endpoint?',
-    options: ['Amazon S3', 'Amazon SageMaker Endpoints', 'Amazon RDS', 'AWS Lambda only (no ML support)'],
-    correctAnswer: 1,
+      'You need autoscaling real-time inference for a PyTorch model with minimal ops overhead. Best choice?',
+    options: ['Amazon RDS', 'Amazon S3', 'Amazon SageMaker Endpoints', 'AWS CloudFront'],
+    correctAnswer: 2,
     points: 2,
   },
   {
@@ -111,14 +116,14 @@ export const mcqQuestions: McqQuestion[] = [
     category: 'Python & ML',
     type: 'mcq',
     question:
-      'In scikit-learn, what is the purpose of a train_test_split?',
+      'What is the main statistical reason to hold out a validation set during model development?',
     options: [
-      'To deploy models to AWS',
-      'To evaluate model performance on unseen data and prevent overfitting',
-      'To perform ETL extraction',
-      'To cluster unlabeled data',
+      'To estimate generalization on unseen data and tune hyperparameters without leaking test labels',
+      'To increase training set size',
+      'To guarantee the model converges',
+      'To remove class imbalance automatically',
     ],
-    correctAnswer: 1,
+    correctAnswer: 0,
     points: 2,
   },
   {
@@ -126,25 +131,24 @@ export const mcqQuestions: McqQuestion[] = [
     category: 'API Security',
     type: 'mcq',
     question:
-      'Which HTTP status code should a REST API return when a client presents valid credentials but lacks permission for the requested resource?',
-    options: ['401 Unauthorized', '403 Forbidden', '404 Not Found', '500 Internal Server Error'],
+      'A valid JWT is presented but the user role lacks access to DELETE /admin/users. Which status code?',
+    options: ['404 Not Found', '403 Forbidden', '401 Unauthorized', '200 OK'],
     correctAnswer: 1,
     points: 2,
-    explanation: '403 indicates authenticated but not authorized; 401 means authentication failed or is missing.',
   },
   {
     id: 'q9',
     category: 'Security',
     type: 'mcq',
     question:
-      'What is the primary purpose of using parameterized queries (prepared statements) in database access code?',
+      'Which mitigation most directly prevents SQL injection in application code?',
     options: [
-      'Improve query performance only',
-      'Prevent SQL injection by separating query structure from user input',
-      'Encrypt data at rest',
-      'Enable cross-origin requests',
+      'Parameterized queries with bound user input',
+      'Base64-encoding user input',
+      'Using HTTPS only',
+      'Storing passwords in plaintext',
     ],
-    correctAnswer: 1,
+    correctAnswer: 0,
     points: 2,
   },
   {
@@ -152,17 +156,205 @@ export const mcqQuestions: McqQuestion[] = [
     category: 'API Design',
     type: 'mcq',
     question:
-      'Which practice is considered a security best practice for REST APIs that expose sensitive ML inference endpoints?',
+      'Which combination is essential for production ML inference APIs handling sensitive data?',
     options: [
-      'Embedding API keys in client-side JavaScript',
-      'Using HTTPS, authentication, and rate limiting on all endpoints',
-      'Returning full stack traces in error responses',
-      'Disabling CORS entirely without alternative access controls',
+      'Public endpoints with obscured URLs',
+      'HTTP with API keys in query strings',
+      'Verbose error messages with stack traces',
+      'TLS, authentication, authorization, and rate limiting',
+    ],
+    correctAnswer: 3,
+    points: 2,
+  },
+  {
+    id: 'q11',
+    category: 'MLOps',
+    type: 'mcq',
+    question:
+      'Production model accuracy drops because input feature distributions shifted since training. This is called:',
+    options: ['Underfitting', 'Gradient explosion', 'Data drift / concept drift', 'Over-regularization'],
+    correctAnswer: 2,
+    points: 2,
+  },
+  {
+    id: 'q12',
+    category: 'Deep Learning',
+    type: 'mcq',
+    question:
+      'In transformer architectures, which mechanism allows each token to weigh relevance of all other tokens?',
+    options: ['Dropout', 'Batch normalization', 'Max pooling', 'Self-attention'],
+    correctAnswer: 3,
+    points: 2,
+  },
+  {
+    id: 'q13',
+    category: 'API Security',
+    type: 'mcq',
+    question:
+      'Which OAuth 2.0 flow is recommended for server-side web apps that can securely store a client secret?',
+    options: ['Authorization Code flow', 'Implicit flow in SPA without PKCE', 'Password grant for all users', 'Client credentials for end-user login'],
+    correctAnswer: 0,
+    points: 2,
+  },
+  {
+    id: 'q14',
+    category: 'Spark',
+    type: 'mcq',
+    question:
+      'A Spark job is slow due to excessive shuffle across the cluster. What is the most likely root cause?',
+    options: [
+      'Using Parquet instead of CSV',
+      'Wide dependencies (e.g., groupBy/join) causing data redistribution',
+      'Too few partitions only on the driver',
+      'Collecting small files to the driver',
     ],
     correctAnswer: 1,
     points: 2,
   },
+  {
+    id: 'q15',
+    category: 'Statistics',
+    type: 'mcq',
+    question:
+      'k-fold cross-validation primarily helps you:',
+    options: [
+      'Deploy models faster',
+      'Guarantee 100% accuracy',
+      'Obtain a more reliable estimate of model performance with limited data',
+      'Eliminate the need for a test set entirely',
+    ],
+    correctAnswer: 2,
+    points: 2,
+  },
+  {
+    id: 'q16',
+    category: 'Security',
+    type: 'mcq',
+    question:
+      'Where should short-lived access tokens be stored in a browser-based SPA calling your API?',
+    options: [
+      'localStorage indefinitely',
+      'Hard-coded in source',
+      'Public GitHub repository',
+      'Memory (or secure httpOnly cookie via backend) — never in localStorage long-term',
+    ],
+    correctAnswer: 3,
+    points: 2,
+  },
+  {
+    id: 'q17',
+    category: 'Feature Engineering',
+    type: 'mcq',
+    question:
+      'Why is feature scaling (e.g., StandardScaler) important before distance-based algorithms like k-NN?',
+    options: [
+      'Features on larger scales would dominate distance calculations',
+      'It removes all outliers automatically',
+      'It is only needed for neural networks',
+      'It replaces missing value imputation',
+    ],
+    correctAnswer: 0,
+    points: 2,
+  },
+  {
+    id: 'q18',
+    category: 'API Design',
+    type: 'mcq',
+    question:
+      'Which algorithm is commonly used in API gateways to enforce rate limits per client over time windows?',
+    options: ['K-Means', 'Apriori', 'Token bucket or sliding window', 'PageRank'],
+    correctAnswer: 2,
+    points: 2,
+  },
+  {
+    id: 'q19',
+    category: 'Deep Learning',
+    type: 'mcq',
+    question:
+      'During training, vanishing gradients in very deep networks are most commonly mitigated by:',
+    options: [
+      'Removing all activation functions',
+      'Increasing learning rate by 100×',
+      'Residual connections and ReLU-family activations',
+      'Using only batch size of 1',
+    ],
+    correctAnswer: 2,
+    points: 2,
+  },
+  {
+    id: 'q20',
+    category: 'MLOps',
+    type: 'mcq',
+    question:
+      'You must roll back a bad model deployment with zero downtime. Which pattern fits best?',
+    options: [
+      'Blue-green or canary deployment with traffic shifting',
+      'Deleting the production database',
+      'Hard-coding model weights in the client',
+      'Disabling authentication temporarily',
+    ],
+    correctAnswer: 0,
+    points: 2,
+  },
+  {
+    id: 'q21',
+    category: 'Security',
+    type: 'mcq',
+    question:
+      'An API returns detailed stack traces and internal SQL to clients on 500 errors. Primary risk?',
+    options: [
+      'Improved debugging for attackers and information disclosure',
+      'Faster response times',
+      'Better SEO rankings',
+      'Automatic GDPR compliance',
+    ],
+    correctAnswer: 0,
+    points: 2,
+  },
+  {
+    id: 'q22',
+    category: 'NLP',
+    type: 'mcq',
+    question:
+      'BLEU score is commonly used to evaluate which task?',
+    options: [
+      'Image classification accuracy',
+      'Machine translation or text generation quality against references',
+      'Clustering silhouette score',
+      'Time-series forecasting MAPE',
+    ],
+    correctAnswer: 1,
+    points: 2,
+  },
+  {
+    id: 'q23',
+    category: 'Big Data',
+    type: 'mcq',
+    question:
+      'In Spark, what does a "narrow transformation" (e.g., map, filter) imply?',
+    options: [
+      'Each partition can be computed without shuffling data across the cluster',
+      'It always triggers a full cluster restart',
+      'It requires writing to HDFS first',
+      'It cannot be pipelined with other stages',
+    ],
+    correctAnswer: 0,
+    points: 2,
+  },
+  {
+    id: 'q24',
+    category: 'API Security',
+    type: 'mcq',
+    question:
+      'Which header helps browsers block MIME-type sniffing attacks on API responses?',
+    options: ['X-Content-Type-Options: nosniff', 'X-Powered-By: Express', 'Cache-Control: public', 'Access-Control-Allow-Origin: *'],
+    correctAnswer: 0,
+    points: 2,
+  },
 ];
+
+/** @deprecated Use mcqQuestionPool */
+export const mcqQuestions = mcqQuestionPool;
 
 export const codingQuestions: CodingQuestion[] = [
   {
@@ -292,7 +484,33 @@ def get_prediction(prediction_id):
   },
 ];
 
-export const questions: Question[] = [...mcqQuestions, ...codingQuestions];
+export const questions: Question[] = [...mcqQuestionPool, ...codingQuestions];
+
+export interface ExamMeta {
+  shuffleMap: ShuffleMap;
+  questionIds: string[];
+}
+
+export function getExamTotalPoints(questionIds: string[]): number {
+  let total = 0;
+  for (const id of questionIds) {
+    const mcq = mcqQuestionPool.find((q) => q.id === id);
+    if (mcq) {
+      total += mcq.points;
+      continue;
+    }
+    const code = codingQuestions.find((q) => q.id === id);
+    if (code) total += code.points;
+  }
+  return total;
+}
+
+export function getTotalPoints(): number {
+  return getExamTotalPoints([
+    ...mcqQuestionPool.slice(0, MCQ_PER_EXAM).map((q) => q.id),
+    ...codingQuestions.map((q) => q.id),
+  ]);
+}
 
 function matchesCriterion(code: string, criterion: CodingCriterion): boolean {
   const normalized = code.replace(/\s+/g, ' ');
@@ -318,45 +536,46 @@ export function gradeCodingAnswer(
   return { earned, max: question.points, criteriaResults };
 }
 
-export function getTotalPoints(): number {
-  return questions.reduce((sum, q) => sum + q.points, 0);
-}
-
-export interface GradeResult {
-  score: number;
-  totalPoints: number;
-  breakdown: Record<string, boolean | { earned: number; max: number; criteriaResults: Record<string, boolean> }>;
-  codingDetails: Record<string, { earned: number; max: number; criteriaResults: Record<string, boolean>; code: string }>;
-}
-
 export function gradeAnswers(
-  answers: Record<string, AnswerValue>
+  answers: Record<string, AnswerValue>,
+  exam?: ExamMeta
 ): GradeResult {
   const breakdown: GradeResult['breakdown'] = {};
   const codingDetails: GradeResult['codingDetails'] = {};
   let score = 0;
 
-  for (const q of questions) {
-    const userAnswer = answers[q.id];
+  const questionIds =
+    exam?.questionIds ??
+    [...mcqQuestionPool.map((q) => q.id), ...codingQuestions.map((q) => q.id)];
+  const shuffleMap = exam?.shuffleMap ?? {};
 
-    if (q.type === 'mcq') {
-      if (userAnswer === null || userAnswer === undefined) {
-        breakdown[q.id] = false;
-        continue;
-      }
-      const correct = userAnswer === q.correctAnswer;
-      breakdown[q.id] = correct;
-      if (correct) score += q.points;
-    } else if (q.type === 'coding') {
+  for (const id of questionIds) {
+    const mcq = mcqQuestionPool.find((q) => q.id === id);
+    if (mcq) {
+      const userAnswer = answers[id];
+      const correct = gradeMcqWithShuffle(
+        id,
+        typeof userAnswer === 'number' ? userAnswer : null,
+        shuffleMap
+      );
+      breakdown[id] = correct;
+      if (correct) score += mcq.points;
+      continue;
+    }
+
+    const coding = codingQuestions.find((q) => q.id === id);
+    if (coding) {
+      const userAnswer = answers[id];
       const code = typeof userAnswer === 'string' ? userAnswer : '';
-      const result = gradeCodingAnswer(code, q);
-      breakdown[q.id] = result;
-      codingDetails[q.id] = { ...result, code };
+      const result = gradeCodingAnswer(code, coding);
+      breakdown[id] = result;
+      codingDetails[id] = { ...result, code };
       score += result.earned;
     }
   }
 
-  return { score, totalPoints: getTotalPoints(), breakdown, codingDetails };
+  const totalPoints = getExamTotalPoints(questionIds);
+  return { score, totalPoints, breakdown, codingDetails };
 }
 
 export function getIntegrityRisk(session: {
@@ -386,8 +605,21 @@ export function getIntegrityRisk(session: {
   return { level, flags };
 }
 
-export function isQuestionAnswered(q: Question, answer: AnswerValue): boolean {
+export interface GradeResult {
+  score: number;
+  totalPoints: number;
+  breakdown: Record<string, boolean | { earned: number; max: number; criteriaResults: Record<string, boolean> }>;
+  codingDetails: Record<string, { earned: number; max: number; criteriaResults: Record<string, boolean>; code: string }>;
+}
+
+export function isQuestionAnswered(
+  q: { type: string; id: string },
+  answer: AnswerValue,
+  starterCode?: string
+): boolean {
   if (answer === null || answer === undefined) return false;
-  if (q.type === 'coding') return typeof answer === 'string' && answer.trim().length > 30;
+  if (q.type === 'coding') {
+    return typeof answer === 'string' && answer.trim().length > 30 && answer !== starterCode;
+  }
   return true;
 }

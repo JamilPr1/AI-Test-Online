@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import TestInterface from '@/components/TestInterface';
 import { useProctor } from '@/hooks/useProctor';
+import type { ClientQuestion } from '@/lib/shuffle';
 
 interface StoredSession {
   sessionId: string;
   startedAt: string;
+  examPaper: ClientQuestion[];
   candidate: { fullName: string; email: string };
 }
 
@@ -30,11 +32,30 @@ export default function TestPage() {
       return;
     }
     try {
-      setSession(JSON.parse(raw));
+      const parsed = JSON.parse(raw) as StoredSession;
+      if (!parsed.examPaper?.length) {
+        router.replace('/');
+        return;
+      }
+      setSession(parsed);
     } catch {
       router.replace('/');
     }
   }, [router]);
+
+  useEffect(() => {
+    if (!session) return;
+    const ping = () => {
+      fetch('/api/behavior', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: session.sessionId }),
+      }).catch(() => {});
+    };
+    ping();
+    const interval = setInterval(ping, 20000);
+    return () => clearInterval(interval);
+  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -127,6 +148,7 @@ export default function TestPage() {
       <div className="max-w-4xl mx-auto px-4 py-6">
         <TestInterface
           session={session}
+          examQuestions={session.examPaper}
           onSubmit={handleSubmit}
           submitting={submitting}
           proctorWarnings={proctorWarnings}

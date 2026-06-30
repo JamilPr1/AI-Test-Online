@@ -40,12 +40,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [filter, setFilter] = useState<'all' | 'submitted' | 'passed' | 'flagged'>('all');
+  const [filter, setFilter] = useState<'all' | 'in_progress' | 'submitted' | 'passed' | 'flagged'>('all');
   const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    setLoginError('');
-  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -80,6 +76,23 @@ export default function AdminPage() {
     }
   }, []);
 
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    const interval = setInterval(fetchData, 15000);
+    return () => clearInterval(interval);
+  }, [authenticated, fetchData]);
+
+  const handleLogout = async () => {
+    await fetch('/api/admin/logout', { method: 'POST' });
+    setAuthenticated(false);
+    setSessions([]);
+    setStats(null);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -104,6 +117,7 @@ export default function AdminPage() {
       s.email.toLowerCase().includes(search.toLowerCase());
 
     if (!matchesSearch) return false;
+    if (filter === 'in_progress') return s.status === 'in_progress';
     if (filter === 'submitted') return s.status === 'submitted';
     if (filter === 'passed') return s.status === 'submitted' && s.percentage >= 60;
     if (filter === 'flagged') return s.integrity?.level !== 'low';
@@ -142,10 +156,7 @@ export default function AdminPage() {
             )}
             <button type="submit" className="btn-primary w-full">Sign In</button>
           </form>
-          <p className="text-xs text-slate-400 text-center mt-4">
-            Default password: admin123 (set ADMIN_PASSWORD in .env)
-          </p>
-          <Link href="/" className="block text-center text-sm text-brand-600 mt-4 hover:underline">
+          <Link href="/" className="block text-center text-sm text-brand-600 mt-6 hover:underline">
             Back to candidate portal
           </Link>
         </div>
@@ -161,7 +172,12 @@ export default function AdminPage() {
             <h1 className="text-xl font-bold text-slate-900">Admin Dashboard</h1>
             <p className="text-sm text-slate-500">AI Developer Screening Results</p>
           </div>
-          <Link href="/" className="btn-secondary text-sm">Candidate Portal</Link>
+          <div className="flex items-center gap-3">
+            <Link href="/" className="btn-secondary text-sm">Candidate Portal</Link>
+            <button type="button" onClick={handleLogout} className="btn-secondary text-sm">
+              Sign Out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -179,7 +195,7 @@ export default function AdminPage() {
         <div className="card overflow-hidden">
           <div className="p-4 border-b border-slate-200 flex flex-wrap gap-4 items-center justify-between">
             <div className="flex flex-wrap gap-2">
-              {(['all', 'submitted', 'passed', 'flagged'] as const).map((f) => (
+              {(['all', 'in_progress', 'submitted', 'passed', 'flagged'] as const).map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -190,7 +206,7 @@ export default function AdminPage() {
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                  {f === 'in_progress' ? 'In Progress' : f.charAt(0).toUpperCase() + f.slice(1)}
                 </button>
               ))}
             </div>
@@ -256,18 +272,31 @@ export default function AdminPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-600">{s.tab_switches}</td>
                       <td className="px-4 py-3 text-slate-600">
-                        <p>{formatDate(s.submitted_at)}</p>
-                        <p className="text-xs text-slate-400">
-                          {formatDuration(s.time_taken_seconds)}
-                        </p>
+                        {s.status === 'in_progress' ? (
+                          <>
+                            <p className="text-blue-600 text-xs font-medium">Active now</p>
+                            <p className="text-xs text-slate-400">{formatDate(s.started_at)}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p>{formatDate(s.submitted_at)}</p>
+                            <p className="text-xs text-slate-400">
+                              {formatDuration(s.time_taken_seconds)}
+                            </p>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/admin/${s.id}`}
-                          className="text-brand-600 hover:text-brand-700 font-medium"
-                        >
-                          View
-                        </Link>
+                        {s.status === 'submitted' ? (
+                          <Link
+                            href={`/admin/${s.id}`}
+                            className="text-brand-600 hover:text-brand-700 font-medium"
+                          >
+                            View
+                          </Link>
+                        ) : (
+                          <span className="text-slate-400 text-xs">In test…</span>
+                        )}
                       </td>
                     </tr>
                   ))}

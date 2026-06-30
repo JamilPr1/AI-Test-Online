@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { createSession } from '@/lib/storage';
+import { buildExamPaper } from '@/lib/shuffle';
+import { mcqQuestionPool, codingQuestions, MCQ_PER_EXAM } from '@/lib/questions';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +23,13 @@ export async function POST(request: NextRequest) {
 
     const id = uuidv4();
     const startedAt = new Date().toISOString();
+    const { examPaper, shuffleMap } = buildExamPaper(
+      id,
+      mcqQuestionPool,
+      codingQuestions,
+      MCQ_PER_EXAM
+    );
+    const questionIds = examPaper.map((q) => q.id);
 
     await createSession({
       id,
@@ -31,9 +40,11 @@ export async function POST(request: NextRequest) {
       years_experience: yearsExperience || null,
       current_role: currentRole?.trim() || null,
       started_at: startedAt,
+      last_activity_at: startedAt,
+      question_shuffle_json: JSON.stringify({ shuffleMap, questionIds }),
     });
 
-    return NextResponse.json({ sessionId: id, startedAt });
+    return NextResponse.json({ sessionId: id, startedAt, examPaper });
   } catch (error) {
     console.error('Session start error:', error);
     const message =

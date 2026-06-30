@@ -36,7 +36,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Test already submitted.' }, { status: 400 });
     }
 
-    const { score, totalPoints, breakdown, codingDetails } = gradeAnswers(answers);
+    const examMeta = session.question_shuffle_json
+      ? (JSON.parse(session.question_shuffle_json) as {
+          shuffleMap: import('@/lib/shuffle').ShuffleMap;
+          questionIds: string[];
+        })
+      : undefined;
+
+    const { score, totalPoints, breakdown, codingDetails } = gradeAnswers(
+      answers,
+      examMeta
+        ? { shuffleMap: examMeta.shuffleMap, questionIds: examMeta.questionIds }
+        : undefined
+    );
     const percentage = totalPoints > 0 ? Math.round((score / totalPoints) * 1000) / 10 : 0;
     const submittedAt = new Date().toISOString();
 
@@ -85,7 +97,7 @@ export async function POST(request: NextRequest) {
       totalPoints,
       percentage,
       passed: percentage >= 60,
-      questionCount: questions.length,
+      questionCount: examMeta?.questionIds.length ?? questions.length,
       integrity,
     });
   } catch (error) {

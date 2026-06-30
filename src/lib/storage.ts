@@ -1,5 +1,6 @@
-import { put, list, get } from '@vercel/blob';
+import { put, list, get, del } from '@vercel/blob';
 import { createClient, type Client } from '@libsql/client';
+import { IN_PROGRESS_TIMEOUT_MS } from './constants';
 import path from 'path';
 import fs from 'fs';
 
@@ -28,6 +29,8 @@ export interface TestSession {
   behavior_log_json: string | null;
   links_opened_json: string | null;
   integrity_flags_json: string | null;
+  last_activity_at: string;
+  question_shuffle_json: string | null;
 }
 
 export interface BehaviorEvent {
@@ -79,6 +82,8 @@ function defaultSession(
     behavior_log_json: '[]',
     links_opened_json: '[]',
     integrity_flags_json: '[]',
+    last_activity_at: partial.started_at,
+    question_shuffle_json: null,
     ...partial,
   };
 }
@@ -115,6 +120,10 @@ async function blobGet(id: string): Promise<TestSession | null> {
     console.error(`blobGet failed for ${id}:`, error);
     return null;
   }
+}
+
+async function blobDelete(id: string): Promise<void> {
+  await del(sessionPath(id), { token: blobToken() });
 }
 
 async function blobList(): Promise<TestSession[]> {
@@ -189,7 +198,9 @@ async function initSqlSchema(database: Client) {
       answers_json TEXT,
       behavior_log_json TEXT,
       links_opened_json TEXT,
-      integrity_flags_json TEXT
+      integrity_flags_json TEXT,
+      last_activity_at TEXT,
+      question_shuffle_json TEXT
     )
   `);
 }
@@ -233,7 +244,12 @@ export async function createSession(
     Partial<
       Pick<
         TestSession,
-        'phone' | 'linkedin' | 'years_experience' | 'current_role'
+        | 'phone'
+        | 'linkedin'
+        | 'years_experience'
+        | 'current_role'
+        | 'last_activity_at'
+        | 'question_shuffle_json'
       >
     >
 ): Promise<TestSession> {
@@ -252,8 +268,9 @@ export async function createSession(
   await db.execute({
     sql: `INSERT INTO test_sessions (
       id, full_name, email, phone, linkedin, years_experience, current_role,
-      status, started_at, behavior_log_json, links_opened_json, integrity_flags_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, '[]', '[]', '[]')`,
+      status, started_at, last_activity_at, question_shuffle_json,
+      behavior_log_json, links_opened_json, integrity_flags_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, ?, ?, '[]', '[]', '[]')`,
     args: [
       session.id,
       session.full_name,
@@ -263,12 +280,27 @@ export async function createSession(
       session.years_experience,
       session.current_role,
       session.started_at,
+      session.last_activity_at,
+      session.question_shuffle_json,
     ],
   });
   return session;
 }
 
 export async function getSession(id: string): Promise<TestSession | null> {
+  const session = await getSessionRaw(id);
+  if (!session) return null;
+  if (session.status === 'in_progress') {
+    const last = new Date(session.last_activity_at || session.started_at).getTime();
+    if (Date.now() - last > IN_PROGRESS_TIMEOUT_MS) {
+      await deleteSession(id);
+      return null;
+    }
+  }
+  return session;
+}
+
+async function getSessionRaw(id: string): Promise<TestSession | null> {
   if (useBlob()) {
     const fromBlob = await blobGet(id);
     if (fromBlob) return fromBlob;
@@ -293,14 +325,22 @@ export async function updateSession(
   if (useBlob()) {
     const existing = await blobGet(id);
     if (!existing) return null;
-    const merged = { ...existing, ...updates };
+    const merged = {
+      ...existing,
+      ...updates,
+      last_activity_at: updates.last_activity_at ?? new Date().toISOString(),
+    };
     await blobSave(merged);
     return merged;
   }
 
-  const existing = await sqlGet(id);
+  const existing = await getSessionRaw(id);
   if (!existing) return null;
-  const merged = { ...existing, ...updates };
+  const merged = {
+    ...existing,
+    ...updates,
+    last_activity_at: updates.last_activity_at ?? new Date().toISOString(),
+  };
 
   const db = await ensureSql();
   await db.execute({
@@ -310,7 +350,8 @@ export async function updateSession(
       tab_switches = ?, focus_losses = ?, copy_events = ?, paste_events = ?,
       right_clicks = ?, fullscreen_exits = ?, started_at = ?, submitted_at = ?,
       time_taken_seconds = ?, answers_json = ?, behavior_log_json = ?,
-      links_opened_json = ?, integrity_flags_json = ?
+      links_opened_json = ?, integrity_flags_json = ?,
+      last_activity_at = ?, question_shuffle_json = ?
     WHERE id = ?`,
     args: [
       merged.full_name,
@@ -336,13 +377,15 @@ export async function updateSession(
       merged.behavior_log_json,
       merged.links_opened_json,
       merged.integrity_flags_json,
+      merged.last_activity_at,
+      merged.question_shuffle_json,
       id,
     ],
   });
   return merged;
 }
 
-export async function listSessions(): Promise<TestSession[]> {
+async function listSessionsRaw(): Promise<TestSession[]> {
   if (useBlob()) {
     const sessions = await blobList();
     return sessions.sort((a, b) => {
@@ -352,6 +395,40 @@ export async function listSessions(): Promise<TestSession[]> {
     });
   }
   return sqlList();
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  if (useBlob()) {
+    try {
+      await blobDelete(id);
+    } catch {
+      // already removed
+    }
+    return;
+  }
+  const db = await ensureSql();
+  await db.execute({ sql: 'DELETE FROM test_sessions WHERE id = ?', args: [id] });
+}
+
+export async function purgeStaleInProgressSessions(): Promise<number> {
+  const cutoff = Date.now() - IN_PROGRESS_TIMEOUT_MS;
+  const all = await listSessionsRaw();
+  let removed = 0;
+
+  for (const session of all) {
+    if (session.status !== 'in_progress') continue;
+    const last = new Date(session.last_activity_at || session.started_at).getTime();
+    if (last < cutoff) {
+      await deleteSession(session.id);
+      removed++;
+    }
+  }
+  return removed;
+}
+
+export async function listSessions(): Promise<TestSession[]> {
+  await purgeStaleInProgressSessions();
+  return listSessionsRaw();
 }
 
 /** @deprecated Use storage functions directly */

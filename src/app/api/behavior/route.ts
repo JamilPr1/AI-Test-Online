@@ -45,14 +45,15 @@ export async function POST(request: NextRequest) {
     ];
 
     const updated = await updateSession(sessionId, {
-      tab_switches: tabSwitches ?? 0,
-      focus_losses: focusLosses ?? 0,
-      copy_events: copyEvents ?? 0,
-      paste_events: pasteEvents ?? 0,
-      right_clicks: rightClicks ?? 0,
-      fullscreen_exits: fullscreenExits ?? 0,
+      tab_switches: tabSwitches ?? session.tab_switches,
+      focus_losses: focusLosses ?? session.focus_losses,
+      copy_events: copyEvents ?? session.copy_events,
+      paste_events: pasteEvents ?? session.paste_events,
+      right_clicks: rightClicks ?? session.right_clicks,
+      fullscreen_exits: fullscreenExits ?? session.fullscreen_exits,
       behavior_log_json: JSON.stringify(mergedBehavior),
       links_opened_json: JSON.stringify(mergedLinks),
+      last_activity_at: new Date().toISOString(),
     });
 
     if (!updated) {

@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     });
 
     const stats = {
-      total: sessions.length,
+      total: sessions.filter((s) => s.status === 'submitted').length,
       submitted: sessions.filter((s) => s.status === 'submitted').length,
       inProgress: sessions.filter((s) => s.status === 'in_progress').length,
       passed: sessions.filter(
