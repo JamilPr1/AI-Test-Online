@@ -43,11 +43,25 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<'all' | 'submitted' | 'passed' | 'flagged'>('all');
   const [search, setSearch] = useState('');
 
+  useEffect(() => {
+    setLoginError('');
+  }, []);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/admin');
       if (res.status === 401) {
+        setAuthenticated(false);
+        setLoginError('');
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setLoginError(
+          (data as { error?: string }).error ||
+            'Could not load results. Please try signing in again.'
+        );
         setAuthenticated(false);
         return;
       }
@@ -55,16 +69,16 @@ export default function AdminPage() {
       setSessions(data.sessions);
       setStats(data.stats);
       setAuthenticated(true);
+      setLoginError('');
     } catch {
-      setLoginError('Failed to load data.');
+      setLoginError(
+        'Could not reach the server. If you just logged in, the database connection may be misconfigured.'
+      );
+      setAuthenticated(false);
     } finally {
       setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

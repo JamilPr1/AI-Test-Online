@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureDb } from '@/lib/db';
+import { getSession, updateSession } from '@/lib/storage';
 import { gradeAnswers, getIntegrityRisk, questions } from '@/lib/questions';
 
 export async function POST(request: NextRequest) {
@@ -26,12 +26,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = await ensureDb();
-    const sessionResult = await db.execute({
-      sql: 'SELECT * FROM test_sessions WHERE id = ?',
-      args: [sessionId],
-    });
-    const session = sessionResult.rows[0] as unknown as Record<string, unknown> | undefined;
+    const session = await getSession(sessionId);
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
@@ -47,11 +42,11 @@ export async function POST(request: NextRequest) {
 
     const startTime = startedAt
       ? new Date(startedAt).getTime()
-      : new Date(session.started_at as string).getTime();
+      : new Date(session.started_at).getTime();
     const timeTakenSeconds = Math.floor((Date.now() - startTime) / 1000);
 
-    const existingBehavior = JSON.parse((session.behavior_log_json as string) || '[]');
-    const existingLinks = JSON.parse((session.links_opened_json as string) || '[]');
+    const existingBehavior = JSON.parse(session.behavior_log_json || '[]');
+    const existingLinks = JSON.parse(session.links_opened_json || '[]');
     const mergedBehavior = [...existingBehavior, ...(behaviorLog || [])];
     const mergedLinks = [...existingLinks, ...(linksOpened || [])];
 
@@ -66,43 +61,23 @@ export async function POST(request: NextRequest) {
 
     const integrity = getIntegrityRisk(integrityData);
 
-    await db.execute({
-      sql: `UPDATE test_sessions SET
-        status = 'submitted',
-        score = ?,
-        total_points = ?,
-        percentage = ?,
-        tab_switches = ?,
-        focus_losses = ?,
-        copy_events = ?,
-        paste_events = ?,
-        right_clicks = ?,
-        fullscreen_exits = ?,
-        submitted_at = ?,
-        time_taken_seconds = ?,
-        answers_json = ?,
-        behavior_log_json = ?,
-        links_opened_json = ?,
-        integrity_flags_json = ?
-      WHERE id = ?`,
-      args: [
-        score,
-        totalPoints,
-        percentage,
-        tabSwitches ?? 0,
-        focusLosses ?? 0,
-        copyEvents ?? 0,
-        pasteEvents ?? 0,
-        rightClicks ?? 0,
-        fullscreenExits ?? 0,
-        submittedAt,
-        timeTakenSeconds,
-        JSON.stringify({ answers, breakdown, codingDetails }),
-        JSON.stringify(mergedBehavior),
-        JSON.stringify(mergedLinks),
-        JSON.stringify(integrity),
-        sessionId,
-      ],
+    await updateSession(sessionId, {
+      status: 'submitted',
+      score,
+      total_points: totalPoints,
+      percentage,
+      tab_switches: tabSwitches ?? 0,
+      focus_losses: focusLosses ?? 0,
+      copy_events: copyEvents ?? 0,
+      paste_events: pasteEvents ?? 0,
+      right_clicks: rightClicks ?? 0,
+      fullscreen_exits: fullscreenExits ?? 0,
+      submitted_at: submittedAt,
+      time_taken_seconds: timeTakenSeconds,
+      answers_json: JSON.stringify({ answers, breakdown, codingDetails }),
+      behavior_log_json: JSON.stringify(mergedBehavior),
+      links_opened_json: JSON.stringify(mergedLinks),
+      integrity_flags_json: JSON.stringify(integrity),
     });
 
     return NextResponse.json({

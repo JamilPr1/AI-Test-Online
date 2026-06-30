@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureDb } from '@/lib/db';
+import { listSessions } from '@/lib/storage';
 import { ADMIN_COOKIE, verifyAdminPassword } from '@/lib/utils';
 import { getIntegrityRisk } from '@/lib/questions';
 
@@ -25,53 +25,51 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = request.cookies.get(ADMIN_COOKIE)?.value;
-  if (auth !== 'authenticated') {
-    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+  try {
+    const auth = request.cookies.get(ADMIN_COOKIE)?.value;
+    if (auth !== 'authenticated') {
+      return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+    }
+
+    const sessions = await listSessions();
+
+    const enriched = sessions.map((s) => {
+      const integrity = s.integrity_flags_json
+        ? JSON.parse(s.integrity_flags_json)
+        : getIntegrityRisk({
+            tab_switches: s.tab_switches,
+            focus_losses: s.focus_losses,
+            copy_events: s.copy_events,
+            paste_events: s.paste_events,
+            links_opened_json: s.links_opened_json,
+            fullscreen_exits: s.fullscreen_exits,
+          });
+      return { ...s, integrity };
+    });
+
+    const stats = {
+      total: sessions.length,
+      submitted: sessions.filter((s) => s.status === 'submitted').length,
+      inProgress: sessions.filter((s) => s.status === 'in_progress').length,
+      passed: sessions.filter(
+        (s) => s.status === 'submitted' && s.percentage >= 60
+      ).length,
+      avgScore:
+        sessions.filter((s) => s.status === 'submitted').length > 0
+          ? Math.round(
+              sessions
+                .filter((s) => s.status === 'submitted')
+                .reduce((sum, s) => sum + s.percentage, 0) /
+                sessions.filter((s) => s.status === 'submitted').length
+            )
+          : 0,
+    };
+
+    return NextResponse.json({ sessions: enriched, stats });
+  } catch (error) {
+    console.error('Admin list error:', error);
+    const message =
+      error instanceof Error ? error.message : 'Failed to load sessions.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const db = await ensureDb();
-  const result = await db.execute(`
-    SELECT id, full_name, email, phone, linkedin, years_experience, current_role,
-      status, score, total_points, percentage, tab_switches, focus_losses,
-      copy_events, paste_events, right_clicks, fullscreen_exits,
-      started_at, submitted_at, time_taken_seconds, integrity_flags_json
-    FROM test_sessions
-    ORDER BY CASE WHEN submitted_at IS NULL THEN 1 ELSE 0 END, submitted_at DESC, started_at DESC
-  `);
-  const sessions = result.rows as unknown as Array<Record<string, unknown>>;
-
-  const enriched = sessions.map((s) => {
-    const integrity = s.integrity_flags_json
-      ? JSON.parse(s.integrity_flags_json as string)
-      : getIntegrityRisk({
-          tab_switches: s.tab_switches as number,
-          focus_losses: s.focus_losses as number,
-          copy_events: s.copy_events as number,
-          paste_events: s.paste_events as number,
-          links_opened_json: '[]',
-          fullscreen_exits: s.fullscreen_exits as number,
-        });
-    return { ...s, integrity };
-  });
-
-  const stats = {
-    total: sessions.length,
-    submitted: sessions.filter((s) => s.status === 'submitted').length,
-    inProgress: sessions.filter((s) => s.status === 'in_progress').length,
-    passed: sessions.filter(
-      (s) => s.status === 'submitted' && (s.percentage as number) >= 60
-    ).length,
-    avgScore:
-      sessions.filter((s) => s.status === 'submitted').length > 0
-        ? Math.round(
-            sessions
-              .filter((s) => s.status === 'submitted')
-              .reduce((sum, s) => sum + (s.percentage as number), 0) /
-              sessions.filter((s) => s.status === 'submitted').length
-          )
-        : 0,
-  };
-
-  return NextResponse.json({ sessions: enriched, stats });
 }
