@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { compressHeadshot } from '@/lib/image';
+import {
+  compressHeadshotFile,
+  compressHeadshotFromVideo,
+  isCameraSupported,
+} from '@/lib/image';
 
 interface HeadshotCaptureProps {
   value: string | null;
@@ -16,10 +20,16 @@ export default function HeadshotCapture({ value, onChange, error }: HeadshotCapt
   const [mode, setMode] = useState<'idle' | 'camera' | 'preview'>('idle');
   const [cameraError, setCameraError] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const cameraSupported = isCameraSupported();
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    setCameraReady(false);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
   }, []);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
@@ -28,36 +38,84 @@ export default function HeadshotCapture({ value, onChange, error }: HeadshotCapt
     if (value) setMode('preview');
   }, [value]);
 
+  // Attach stream after the <video> element is mounted (mode === 'camera')
+  useEffect(() => {
+    if (mode !== 'camera' || !streamRef.current) return;
+
+    let cancelled = false;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const stream = streamRef.current;
+    video.srcObject = stream;
+    setCameraReady(false);
+
+    const markReady = () => {
+      if (!cancelled && video.videoWidth > 0 && video.videoHeight > 0) {
+        setCameraReady(true);
+      }
+    };
+
+    video.addEventListener('loadedmetadata', markReady);
+    video.addEventListener('playing', markReady);
+
+    video.play().then(markReady).catch(() => {
+      if (!cancelled) {
+        setCameraError('Could not start camera preview. Try uploading a photo instead.');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      video.removeEventListener('loadedmetadata', markReady);
+      video.removeEventListener('playing', markReady);
+    };
+  }, [mode]);
+
   const startCamera = async () => {
     setCameraError('');
+
+    if (!cameraSupported) {
+      setCameraError(
+        'Camera requires HTTPS or localhost. Upload a photo instead, or open this site via https://.'
+      );
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
       setMode('camera');
-    } catch {
-      setCameraError('Camera access denied. Upload a photo instead.');
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setCameraError('Camera permission denied. Allow camera access in your browser, or upload a photo.');
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setCameraError('No camera found on this device. Please upload a photo instead.');
+      } else {
+        setCameraError('Could not access camera. Please upload a photo instead.');
+      }
     }
   };
 
   const capturePhoto = async () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !cameraReady) {
+      setCameraError('Camera is still starting. Wait a second and try again.');
+      return;
+    }
+
     setProcessing(true);
+    setCameraError('');
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Capture failed.');
-      ctx.drawImage(video, 0, 0);
-      const compressed = await compressHeadshot(canvas.toDataURL('image/jpeg', 0.92));
+      const compressed = await compressHeadshotFromVideo(video, true);
       onChange(compressed);
       stopCamera();
       setMode('preview');
@@ -72,13 +130,7 @@ export default function HeadshotCapture({ value, onChange, error }: HeadshotCapt
     setCameraError('');
     setProcessing(true);
     try {
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Could not read file.'));
-        reader.readAsDataURL(file);
-      });
-      const compressed = await compressHeadshot(dataUrl);
+      const compressed = await compressHeadshotFile(file);
       onChange(compressed);
       setMode('preview');
     } catch (err) {
@@ -90,6 +142,12 @@ export default function HeadshotCapture({ value, onChange, error }: HeadshotCapt
 
   const clearPhoto = () => {
     onChange(null);
+    stopCamera();
+    setMode('idle');
+    setCameraError('');
+  };
+
+  const cancelCamera = () => {
     stopCamera();
     setMode('idle');
     setCameraError('');
@@ -121,24 +179,30 @@ export default function HeadshotCapture({ value, onChange, error }: HeadshotCapt
         </div>
       ) : mode === 'camera' ? (
         <div className="rounded-xl border border-slate-200 overflow-hidden bg-slate-900">
-          <video ref={videoRef} className="w-full max-h-72 object-cover mirror" playsInline muted />
+          <div className="relative bg-black min-h-[240px] flex items-center justify-center">
+            <video
+              ref={videoRef}
+              className="w-full max-h-80 object-cover mirror"
+              playsInline
+              muted
+              autoPlay
+            />
+            {!cameraReady && (
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 text-white text-sm">
+                Starting camera…
+              </div>
+            )}
+          </div>
           <div className="p-3 flex flex-wrap gap-2 bg-slate-800">
             <button
               type="button"
               className="btn-primary text-sm flex-1"
               onClick={capturePhoto}
-              disabled={processing}
+              disabled={processing || !cameraReady}
             >
-              {processing ? 'Processing…' : 'Capture'}
+              {processing ? 'Processing…' : 'Capture Photo'}
             </button>
-            <button
-              type="button"
-              className="btn-secondary text-sm"
-              onClick={() => {
-                stopCamera();
-                setMode('idle');
-              }}
-            >
+            <button type="button" className="btn-secondary text-sm" onClick={cancelCamera}>
               Cancel
             </button>
           </div>
@@ -147,16 +211,19 @@ export default function HeadshotCapture({ value, onChange, error }: HeadshotCapt
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
-            className="flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-slate-300 hover:border-brand-400 hover:bg-brand-50/50 transition-colors text-sm font-medium text-slate-700"
+            className="flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-slate-300 hover:border-brand-400 hover:bg-brand-50/50 transition-colors text-sm font-medium text-slate-700 disabled:opacity-50"
             onClick={startCamera}
+            disabled={!cameraSupported}
+            title={!cameraSupported ? 'Camera requires HTTPS or localhost' : undefined}
           >
             <CameraIcon />
-            Use Camera
+            {cameraSupported ? 'Use Camera' : 'Camera (HTTPS required)'}
           </button>
           <button
             type="button"
             className="flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-slate-300 hover:border-brand-400 hover:bg-brand-50/50 transition-colors text-sm font-medium text-slate-700"
             onClick={() => fileRef.current?.click()}
+            disabled={processing}
           >
             <UploadIcon />
             Upload Photo
@@ -164,7 +231,8 @@ export default function HeadshotCapture({ value, onChange, error }: HeadshotCapt
           <input
             ref={fileRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/jpeg,image/png,image/webp,image/*"
+            capture="user"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
