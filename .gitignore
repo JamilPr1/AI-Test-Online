@@ -3,5 +3,9 @@ data/
 *.db-*
 
 .env
+.github-token
+.github-device.json
+scripts/poll-github-token.ps1
 node_modules/
 .next/
+.vercel
