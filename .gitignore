@@ -5,7 +5,9 @@ data/
 .env
 .github-token
 .github-device.json
-scripts/poll-github-token.ps1
+.github-device-code
+.push-result.txt
+scripts/
 node_modules/
 .next/
 .vercel
