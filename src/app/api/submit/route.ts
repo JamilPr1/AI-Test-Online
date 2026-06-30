@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { ensureDb } from '@/lib/db';
 import { gradeAnswers, getIntegrityRisk, questions } from '@/lib/questions';
 
 export async function POST(request: NextRequest) {
@@ -26,10 +26,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getDb();
-    const session = db
-      .prepare('SELECT * FROM test_sessions WHERE id = ?')
-      .get(sessionId) as Record<string, unknown> | undefined;
+    const db = await ensureDb();
+    const sessionResult = await db.execute({
+      sql: 'SELECT * FROM test_sessions WHERE id = ?',
+      args: [sessionId],
+    });
+    const session = sessionResult.rows[0] as unknown as Record<string, unknown> | undefined;
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
@@ -43,7 +45,9 @@ export async function POST(request: NextRequest) {
     const percentage = totalPoints > 0 ? Math.round((score / totalPoints) * 1000) / 10 : 0;
     const submittedAt = new Date().toISOString();
 
-    const startTime = startedAt ? new Date(startedAt).getTime() : new Date(session.started_at as string).getTime();
+    const startTime = startedAt
+      ? new Date(startedAt).getTime()
+      : new Date(session.started_at as string).getTime();
     const timeTakenSeconds = Math.floor((Date.now() - startTime) / 1000);
 
     const existingBehavior = JSON.parse((session.behavior_log_json as string) || '[]');
@@ -62,8 +66,8 @@ export async function POST(request: NextRequest) {
 
     const integrity = getIntegrityRisk(integrityData);
 
-    db.prepare(
-      `UPDATE test_sessions SET
+    await db.execute({
+      sql: `UPDATE test_sessions SET
         status = 'submitted',
         score = ?,
         total_points = ?,
@@ -80,25 +84,26 @@ export async function POST(request: NextRequest) {
         behavior_log_json = ?,
         links_opened_json = ?,
         integrity_flags_json = ?
-      WHERE id = ?`
-    ).run(
-      score,
-      totalPoints,
-      percentage,
-      tabSwitches ?? 0,
-      focusLosses ?? 0,
-      copyEvents ?? 0,
-      pasteEvents ?? 0,
-      rightClicks ?? 0,
-      fullscreenExits ?? 0,
-      submittedAt,
-      timeTakenSeconds,
-      JSON.stringify({ answers, breakdown, codingDetails }),
-      JSON.stringify(mergedBehavior),
-      JSON.stringify(mergedLinks),
-      JSON.stringify(integrity),
-      sessionId
-    );
+      WHERE id = ?`,
+      args: [
+        score,
+        totalPoints,
+        percentage,
+        tabSwitches ?? 0,
+        focusLosses ?? 0,
+        copyEvents ?? 0,
+        pasteEvents ?? 0,
+        rightClicks ?? 0,
+        fullscreenExits ?? 0,
+        submittedAt,
+        timeTakenSeconds,
+        JSON.stringify({ answers, breakdown, codingDetails }),
+        JSON.stringify(mergedBehavior),
+        JSON.stringify(mergedLinks),
+        JSON.stringify(integrity),
+        sessionId,
+      ],
+    });
 
     return NextResponse.json({
       score,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { getDb } from '@/lib/db';
+import { ensureDb } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,29 +19,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid email address.' }, { status: 400 });
     }
 
-    const db = getDb();
+    const db = await ensureDb();
     const id = uuidv4();
     const startedAt = new Date().toISOString();
 
-    db.prepare(
-      `INSERT INTO test_sessions (
+    await db.execute({
+      sql: `INSERT INTO test_sessions (
         id, full_name, email, phone, linkedin, years_experience, current_role,
         status, started_at, behavior_log_json, links_opened_json, integrity_flags_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, '[]', '[]', '[]')`
-    ).run(
-      id,
-      fullName.trim(),
-      email.trim().toLowerCase(),
-      phone?.trim() || null,
-      linkedin?.trim() || null,
-      yearsExperience || null,
-      currentRole?.trim() || null,
-      startedAt
-    );
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, '[]', '[]', '[]')`,
+      args: [
+        id,
+        fullName.trim(),
+        email.trim().toLowerCase(),
+        phone?.trim() || null,
+        linkedin?.trim() || null,
+        yearsExperience || null,
+        currentRole?.trim() || null,
+        startedAt,
+      ],
+    });
 
     return NextResponse.json({ sessionId: id, startedAt });
   } catch (error) {
     console.error('Session start error:', error);
-    return NextResponse.json({ error: 'Failed to start session.' }, { status: 500 });
+    const message =
+      error instanceof Error ? error.message : 'Failed to start session.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

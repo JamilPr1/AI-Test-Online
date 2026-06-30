@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { ensureDb } from '@/lib/db';
 import { ADMIN_COOKIE, verifyAdminPassword } from '@/lib/utils';
 import { getIntegrityRisk } from '@/lib/questions';
 
@@ -30,17 +30,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  const db = getDb();
-  const sessions = db
-    .prepare(
-      `SELECT id, full_name, email, phone, linkedin, years_experience, current_role,
-        status, score, total_points, percentage, tab_switches, focus_losses,
-        copy_events, paste_events, right_clicks, fullscreen_exits,
-        started_at, submitted_at, time_taken_seconds, integrity_flags_json
-      FROM test_sessions
-      ORDER BY CASE WHEN submitted_at IS NULL THEN 1 ELSE 0 END, submitted_at DESC, started_at DESC`
-    )
-    .all() as Array<Record<string, unknown>>;
+  const db = await ensureDb();
+  const result = await db.execute(`
+    SELECT id, full_name, email, phone, linkedin, years_experience, current_role,
+      status, score, total_points, percentage, tab_switches, focus_losses,
+      copy_events, paste_events, right_clicks, fullscreen_exits,
+      started_at, submitted_at, time_taken_seconds, integrity_flags_json
+    FROM test_sessions
+    ORDER BY CASE WHEN submitted_at IS NULL THEN 1 ELSE 0 END, submitted_at DESC, started_at DESC
+  `);
+  const sessions = result.rows as unknown as Array<Record<string, unknown>>;
 
   const enriched = sessions.map((s) => {
     const integrity = s.integrity_flags_json

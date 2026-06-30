@@ -1,30 +1,40 @@
-import Database from 'better-sqlite3';
+import { createClient, type Client } from '@libsql/client';
 import path from 'path';
 import fs from 'fs';
 
-const dataDir =
-  process.env.VERCEL === '1'
-    ? path.join('/tmp', 'screening-data')
-    : path.join(process.cwd(), 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+let client: Client | null = null;
+let schemaReady: Promise<void> | null = null;
 
-const dbPath = path.join(dataDir, 'screening.db');
-
-let db: Database.Database | null = null;
-
-export function getDb(): Database.Database {
-  if (!db) {
-    db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    initSchema(db);
+function resolveDatabaseUrl(): string {
+  if (process.env.TURSO_DATABASE_URL) {
+    return process.env.TURSO_DATABASE_URL;
   }
-  return db;
+
+  if (process.env.VERCEL === '1') {
+    throw new Error(
+      'TURSO_DATABASE_URL is required on Vercel. Create a free database at https://turso.tech and add TURSO_DATABASE_URL + TURSO_AUTH_TOKEN to your Vercel project environment variables.'
+    );
+  }
+
+  const dataDir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  return `file:${path.join(dataDir, 'screening.db')}`;
 }
 
-function initSchema(database: Database.Database) {
-  database.exec(`
+export function getClient(): Client {
+  if (!client) {
+    client = createClient({
+      url: resolveDatabaseUrl(),
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+  }
+  return client;
+}
+
+async function initSchema(database: Client) {
+  await database.execute(`
     CREATE TABLE IF NOT EXISTS test_sessions (
       id TEXT PRIMARY KEY,
       full_name TEXT NOT NULL,
@@ -50,11 +60,24 @@ function initSchema(database: Database.Database) {
       behavior_log_json TEXT,
       links_opened_json TEXT,
       integrity_flags_json TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_sessions_email ON test_sessions(email);
-    CREATE INDEX IF NOT EXISTS idx_sessions_submitted ON test_sessions(submitted_at);
+    )
   `);
+  await database.execute(
+    'CREATE INDEX IF NOT EXISTS idx_sessions_email ON test_sessions(email)'
+  );
+  await database.execute(
+    'CREATE INDEX IF NOT EXISTS idx_sessions_submitted ON test_sessions(submitted_at)'
+  );
+}
+
+/** Ensures schema exists before any read/write. Call at the start of every API route. */
+export async function ensureDb(): Promise<Client> {
+  const database = getClient();
+  if (!schemaReady) {
+    schemaReady = initSchema(database);
+  }
+  await schemaReady;
+  return database;
 }
 
 export interface TestSession {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { ensureDb } from '@/lib/db';
 import { ADMIN_COOKIE } from '@/lib/utils';
 import { questions, getIntegrityRisk, gradeCodingAnswer } from '@/lib/questions';
 
@@ -12,10 +12,12 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  const db = getDb();
-  const session = db
-    .prepare('SELECT * FROM test_sessions WHERE id = ?')
-    .get(params.id) as Record<string, unknown> | undefined;
+  const db = await ensureDb();
+  const sessionResult = await db.execute({
+    sql: 'SELECT * FROM test_sessions WHERE id = ?',
+    args: [params.id],
+  });
+  const session = sessionResult.rows[0] as unknown as Record<string, unknown> | undefined;
 
   if (!session) {
     return NextResponse.json({ error: 'Session not found.' }, { status: 404 });

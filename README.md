@@ -68,7 +68,31 @@ npm run build
 npm start
 ```
 
-Set `ADMIN_PASSWORD` to a strong password in production. Data is stored in `data/screening.db` (SQLite).
+Set `ADMIN_PASSWORD` to a strong password in production.
+
+## Persistent database (required for Vercel)
+
+On Vercel, the filesystem is **ephemeral** — local SQLite files are wiped on every redeploy. This app uses **[Turso](https://turso.tech)** (hosted libSQL) so candidate results persist permanently.
+
+### Setup Turso (free tier)
+
+1. Sign up at [turso.tech](https://turso.tech)
+2. Install CLI: `curl -sSfL https://get.tur.so/install.sh | bash` (or see Turso docs for Windows)
+3. Create a database:
+   ```bash
+   turso auth login
+   turso db create ai-test-online
+   turso db show ai-test-online --url
+   turso db tokens create ai-test-online
+   ```
+4. Add to **Vercel** → Project → Settings → Environment Variables:
+   - `TURSO_DATABASE_URL` = `libsql://...` (from step 3)
+   - `TURSO_AUTH_TOKEN` = token from step 3
+5. Redeploy the project
+
+**Local development** uses `data/screening.db` automatically when Turso env vars are not set.
+
+Data is stored in Turso's cloud — survives redeployments, scaling, and cold starts.
 
 ## Project Structure
 
