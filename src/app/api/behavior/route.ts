@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       ...(linksOpened || []),
     ];
 
-    await updateSession(sessionId, {
+    const updated = await updateSession(sessionId, {
       tab_switches: tabSwitches ?? 0,
       focus_losses: focusLosses ?? 0,
       copy_events: copyEvents ?? 0,
@@ -54,6 +54,10 @@ export async function POST(request: NextRequest) {
       behavior_log_json: JSON.stringify(mergedBehavior),
       links_opened_json: JSON.stringify(mergedLinks),
     });
+
+    if (!updated) {
+      return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {

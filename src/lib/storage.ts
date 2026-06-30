@@ -1,4 +1,4 @@
-import { put, list, del } from '@vercel/blob';
+import { put, list, get } from '@vercel/blob';
 import { createClient, type Client } from '@libsql/client';
 import path from 'path';
 import fs from 'fs';
@@ -47,7 +47,7 @@ const BLOB_PREFIX = 'sessions/';
 const blobToken = () => process.env.BLOB_READ_WRITE_TOKEN;
 
 function useBlob(): boolean {
-  return Boolean(blobToken());
+  return Boolean(process.env.VERCEL === '1' && blobToken());
 }
 
 function sessionPath(id: string) {
@@ -96,17 +96,25 @@ async function blobSave(session: TestSession): Promise<void> {
 }
 
 async function blobGet(id: string): Promise<TestSession | null> {
-  const { blobs } = await list({
-    prefix: sessionPath(id),
-    token: blobToken(),
-    limit: 1,
-  });
-  const match = blobs.find((b) => b.pathname === sessionPath(id));
-  if (!match) return null;
+  try {
+    const pathname = sessionPath(id);
+    const result = await get(pathname, {
+      access: 'private',
+      token: blobToken(),
+    });
 
-  const res = await fetch(match.url);
-  if (!res.ok) return null;
-  return (await res.json()) as TestSession;
+    if (!result || result.statusCode !== 200 || !result.stream) {
+      return null;
+    }
+
+    const text = await new Response(result.stream).text();
+    return JSON.parse(text) as TestSession;
+  } catch (error) {
+    const name = error instanceof Error ? error.constructor.name : '';
+    if (name === 'BlobNotFoundError') return null;
+    console.error(`blobGet failed for ${id}:`, error);
+    return null;
+  }
 }
 
 async function blobList(): Promise<TestSession[]> {
@@ -119,9 +127,10 @@ async function blobList(): Promise<TestSession[]> {
     blobs
       .filter((b) => b.pathname.endsWith('.json'))
       .map(async (blob) => {
-        const res = await fetch(blob.url);
-        if (!res.ok) return null;
-        return (await res.json()) as TestSession;
+        const id = blob.pathname
+          .slice(BLOB_PREFIX.length)
+          .replace(/\.json$/, '');
+        return blobGet(id);
       })
   );
 
@@ -232,6 +241,10 @@ export async function createSession(
 
   if (useBlob()) {
     await blobSave(session);
+    const verified = await blobGet(session.id);
+    if (!verified) {
+      throw new Error('Failed to persist session to blob storage.');
+    }
     return session;
   }
 
@@ -256,8 +269,21 @@ export async function createSession(
 }
 
 export async function getSession(id: string): Promise<TestSession | null> {
-  if (useBlob()) return blobGet(id);
-  return sqlGet(id);
+  if (useBlob()) {
+    const fromBlob = await blobGet(id);
+    if (fromBlob) return fromBlob;
+  }
+  if (process.env.TURSO_DATABASE_URL) {
+    try {
+      return await sqlGet(id);
+    } catch (error) {
+      console.error(`sqlGet failed for ${id}:`, error);
+    }
+  }
+  if (!useBlob()) {
+    return sqlGet(id);
+  }
+  return null;
 }
 
 export async function updateSession(
