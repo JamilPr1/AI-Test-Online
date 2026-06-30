@@ -10,6 +10,7 @@ export interface TestSession {
   email: string;
   phone: string | null;
   linkedin: string | null;
+  headshot_data: string | null;
   years_experience: string | null;
   current_role: string | null;
   status: string;
@@ -64,6 +65,7 @@ function defaultSession(
   return {
     phone: null,
     linkedin: null,
+    headshot_data: null,
     years_experience: null,
     current_role: null,
     status: 'in_progress',
@@ -200,9 +202,16 @@ async function initSqlSchema(database: Client) {
       links_opened_json TEXT,
       integrity_flags_json TEXT,
       last_activity_at TEXT,
-      question_shuffle_json TEXT
+      question_shuffle_json TEXT,
+      headshot_data TEXT
     )
   `);
+
+  try {
+    await database.execute('ALTER TABLE test_sessions ADD COLUMN headshot_data TEXT');
+  } catch {
+    // column already exists
+  }
 }
 
 async function ensureSql(): Promise<Client> {
@@ -250,6 +259,7 @@ export async function createSession(
         | 'current_role'
         | 'last_activity_at'
         | 'question_shuffle_json'
+        | 'headshot_data'
       >
     >
 ): Promise<TestSession> {
@@ -268,9 +278,9 @@ export async function createSession(
   await db.execute({
     sql: `INSERT INTO test_sessions (
       id, full_name, email, phone, linkedin, years_experience, current_role,
-      status, started_at, last_activity_at, question_shuffle_json,
+      status, started_at, last_activity_at, question_shuffle_json, headshot_data,
       behavior_log_json, links_opened_json, integrity_flags_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, ?, ?, '[]', '[]', '[]')`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, ?, ?, ?, '[]', '[]', '[]')`,
     args: [
       session.id,
       session.full_name,
@@ -282,6 +292,7 @@ export async function createSession(
       session.started_at,
       session.last_activity_at,
       session.question_shuffle_json,
+      session.headshot_data,
     ],
   });
   return session;
@@ -351,7 +362,7 @@ export async function updateSession(
       right_clicks = ?, fullscreen_exits = ?, started_at = ?, submitted_at = ?,
       time_taken_seconds = ?, answers_json = ?, behavior_log_json = ?,
       links_opened_json = ?, integrity_flags_json = ?,
-      last_activity_at = ?, question_shuffle_json = ?
+      last_activity_at = ?, question_shuffle_json = ?, headshot_data = ?
     WHERE id = ?`,
     args: [
       merged.full_name,
@@ -379,6 +390,7 @@ export async function updateSession(
       merged.integrity_flags_json,
       merged.last_activity_at,
       merged.question_shuffle_json,
+      merged.headshot_data,
       id,
     ],
   });
@@ -429,6 +441,12 @@ export async function purgeStaleInProgressSessions(): Promise<number> {
 export async function listSessions(): Promise<TestSession[]> {
   await purgeStaleInProgressSessions();
   return listSessionsRaw();
+}
+
+/** Omit large headshot payload from list responses */
+export function sessionForList(session: TestSession) {
+  const { headshot_data, ...rest } = session;
+  return { ...rest, has_headshot: Boolean(headshot_data) };
 }
 
 /** @deprecated Use storage functions directly */

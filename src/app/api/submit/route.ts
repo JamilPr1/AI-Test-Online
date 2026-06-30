@@ -99,6 +99,8 @@ export async function POST(request: NextRequest) {
       passed: percentage >= 60,
       questionCount: examMeta?.questionIds.length ?? questions.length,
       integrity,
+      candidateName: session.full_name,
+      headshotData: session.headshot_data,
     });
   } catch (error) {
     console.error('Submit error:', error);

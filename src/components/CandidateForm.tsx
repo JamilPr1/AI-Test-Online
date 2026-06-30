@@ -2,16 +2,18 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import HeadshotCapture from '@/components/HeadshotCapture';
 
 export default function CandidateForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [headshotError, setHeadshotError] = useState('');
+  const [headshot, setHeadshot] = useState<string | null>(null);
   const [form, setForm] = useState({
     fullName: '',
     email: '',
     phone: '',
-    linkedin: '',
     yearsExperience: '',
     currentRole: '',
   });
@@ -24,6 +26,10 @@ export default function CandidateForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!headshot) {
+      setHeadshotError('Please capture or upload your headshot selfie.');
+      return;
+    }
     if (!agreed) {
       setError('Please accept the test integrity policy to continue.');
       return;
@@ -31,6 +37,7 @@ export default function CandidateForm() {
 
     setLoading(true);
     setError('');
+    setHeadshotError('');
 
     try {
       const res = await fetch('/api/session/start', {
@@ -40,7 +47,7 @@ export default function CandidateForm() {
           fullName: form.fullName,
           email: form.email,
           phone: form.phone,
-          linkedin: form.linkedin,
+          headshot,
           yearsExperience: form.yearsExperience,
           currentRole: form.currentRole,
         }),
@@ -55,7 +62,7 @@ export default function CandidateForm() {
           sessionId: data.sessionId,
           startedAt: data.startedAt,
           examPaper: data.examPaper,
-          candidate: form,
+          candidate: { fullName: form.fullName, email: form.email, headshot },
         })
       );
 
@@ -68,7 +75,16 @@ export default function CandidateForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <HeadshotCapture
+        value={headshot}
+        onChange={(data) => {
+          setHeadshot(data);
+          setHeadshotError('');
+        }}
+        error={headshotError}
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
           <label className="label" htmlFor="fullName">
@@ -111,19 +127,6 @@ export default function CandidateForm() {
           />
         </div>
         <div>
-          <label className="label" htmlFor="linkedin">
-            LinkedIn Profile
-          </label>
-          <input
-            id="linkedin"
-            type="url"
-            className="input-field"
-            value={form.linkedin}
-            onChange={(e) => update('linkedin', e.target.value)}
-            placeholder="https://linkedin.com/in/yourprofile"
-          />
-        </div>
-        <div>
           <label className="label" htmlFor="yearsExperience">
             Years of AI/ML Experience <span className="text-red-500">*</span>
           </label>
@@ -142,7 +145,7 @@ export default function CandidateForm() {
             <option value="8+">8+ years</option>
           </select>
         </div>
-        <div>
+        <div className="md:col-span-2">
           <label className="label" htmlFor="currentRole">
             Current Role / Title
           </label>
@@ -156,7 +159,7 @@ export default function CandidateForm() {
         </div>
       </div>
 
-      <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900">
+      <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900">
         <p className="font-semibold mb-2">Test Integrity Policy</p>
         <ul className="list-disc list-inside space-y-1 text-amber-800">
           <li>Duration: 60 minutes · 15 MCQ + 2 coding exercises · Auto-graded</li>
@@ -181,7 +184,7 @@ export default function CandidateForm() {
       </label>
 
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { PLATFORM_SHORT } from '@/lib/branding';
 import { formatDate, formatDuration } from '@/lib/utils';
 
 interface QuestionReviewItem {
@@ -73,20 +74,34 @@ export default function AdminDetailPage() {
   const s = data.session;
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-4 py-4">
-          <Link href="/admin" className="text-sm text-brand-600 hover:underline mb-2 inline-block">
+    <div className="portal-shell min-h-screen">
+      <header className="portal-header">
+        <div className="max-w-5xl mx-auto px-4 py-5">
+          <Link href="/admin" className="text-sm text-brand-200 hover:text-white mb-3 inline-block">
             &larr; Back to Dashboard
           </Link>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{s.full_name as string}</h1>
-              <p className="text-slate-500">{s.email as string}</p>
+          <div className="flex flex-wrap items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              {(s.headshot_data as string) ? (
+                <img
+                  src={s.headshot_data as string}
+                  alt={s.full_name as string}
+                  className="w-20 h-20 rounded-2xl object-cover border-4 border-white/20 shadow-lg"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-2xl bg-brand-500/30 flex items-center justify-center text-2xl font-bold text-white">
+                  {(s.full_name as string).charAt(0)}
+                </div>
+              )}
+              <div>
+                <p className="text-xs text-brand-200 mb-1">{PLATFORM_SHORT}</p>
+                <h1 className="text-2xl font-bold text-white">{s.full_name as string}</h1>
+                <p className="text-slate-300">{s.email as string}</p>
+              </div>
             </div>
             <div className="text-right">
-              <p className="text-3xl font-bold text-brand-700">{s.percentage as number}%</p>
-              <p className="text-sm text-slate-500">
+              <p className="text-4xl font-bold text-white">{s.percentage as number}%</p>
+              <p className="text-sm text-slate-300">
                 {s.score as number}/{s.total_points as number} points
               </p>
             </div>
@@ -95,18 +110,17 @@ export default function AdminDetailPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-        {/* Candidate info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="card p-5">
             <h2 className="font-semibold text-slate-900 mb-3">Candidate Details</h2>
             <dl className="space-y-2 text-sm">
               <Row label="Phone" value={s.phone as string} />
-              <Row label="LinkedIn" value={s.linkedin as string} />
               <Row label="Experience" value={s.years_experience as string} />
               <Row label="Current Role" value={s.current_role as string} />
               <Row label="Started" value={formatDate(s.started_at as string)} />
               <Row label="Submitted" value={formatDate(s.submitted_at as string)} />
               <Row label="Time Taken" value={formatDuration(s.time_taken_seconds as number)} />
+              <Row label="Headshot" value={(s.headshot_data as string) ? 'On file' : '—'} />
             </dl>
           </div>
 

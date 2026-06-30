@@ -1,12 +1,13 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import { PLATFORM_NAME } from '@/lib/branding';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'AI Developer Technical Screening',
-  description: 'Technical assessment for AI Developer candidates',
+  title: PLATFORM_NAME,
+  description: 'Technical screening portal for Arfa Developers candidates',
 };
 
 export default function RootLayout({

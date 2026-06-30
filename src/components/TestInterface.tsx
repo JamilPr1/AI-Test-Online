@@ -95,7 +95,7 @@ export default function TestInterface({
     <div className="space-y-6">
       <div className="card p-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-10">
         <div>
-          <p className="text-sm text-slate-500">AI Developer Screening</p>
+          <p className="text-sm text-slate-500">Arfa Developers · Technical Screening</p>
           <p className="font-semibold text-slate-900">
             Question {currentIndex + 1} of {examQuestions.length}
             <span className="text-slate-400 font-normal text-sm ml-2">

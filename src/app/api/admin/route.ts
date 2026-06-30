@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listSessions } from '@/lib/storage';
+import { listSessions, sessionForList } from '@/lib/storage';
 import { ADMIN_COOKIE, verifyAdminPassword } from '@/lib/utils';
 import { getIntegrityRisk } from '@/lib/questions';
 
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
             links_opened_json: s.links_opened_json,
             fullscreen_exits: s.fullscreen_exits,
           });
-      return { ...s, integrity };
+      return { ...sessionForList(s), integrity };
     });
 
     const stats = {

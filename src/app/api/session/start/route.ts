@@ -3,15 +3,23 @@ import { v4 as uuidv4 } from 'uuid';
 import { createSession } from '@/lib/storage';
 import { buildExamPaper } from '@/lib/shuffle';
 import { mcqQuestionPool, codingQuestions, MCQ_PER_EXAM } from '@/lib/questions';
+import { isValidHeadshotData } from '@/lib/image';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { fullName, email, phone, linkedin, yearsExperience, currentRole } = body;
+    const { fullName, email, phone, headshot, yearsExperience, currentRole } = body;
 
     if (!fullName?.trim() || !email?.trim()) {
       return NextResponse.json(
         { error: 'Full name and email are required.' },
+        { status: 400 }
+      );
+    }
+
+    if (!headshot || !isValidHeadshotData(headshot)) {
+      return NextResponse.json(
+        { error: 'A valid headshot selfie is required before starting the test.' },
         { status: 400 }
       );
     }
@@ -36,7 +44,8 @@ export async function POST(request: NextRequest) {
       full_name: fullName.trim(),
       email: email.trim().toLowerCase(),
       phone: phone?.trim() || null,
-      linkedin: linkedin?.trim() || null,
+      linkedin: null,
+      headshot_data: headshot,
       years_experience: yearsExperience || null,
       current_role: currentRole?.trim() || null,
       started_at: startedAt,

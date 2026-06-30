@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import PortalLogo from '@/components/PortalLogo';
+import { PLATFORM_SHORT } from '@/lib/branding';
 import { formatDate, formatDuration } from '@/lib/utils';
 
 interface Session {
@@ -22,6 +24,7 @@ interface Session {
   started_at: string;
   submitted_at: string | null;
   time_taken_seconds: number | null;
+  has_headshot?: boolean;
   integrity: { level: string; flags: string[] };
 }
 
@@ -126,17 +129,14 @@ export default function AdminPage() {
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100">
-        <div className="card p-8 max-w-sm w-full">
-          <div className="text-center mb-6">
-            <div className="w-12 h-12 rounded-lg bg-brand-600 flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
+      <div className="portal-shell min-h-screen flex items-center justify-center p-4">
+        <div className="card-elevated p-8 max-w-md w-full">
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-5">
+              <PortalLogo size="lg" />
             </div>
             <h1 className="text-xl font-bold text-slate-900">Admin Dashboard</h1>
-            <p className="text-sm text-slate-500 mt-1">Enter password to view test results</p>
+            <p className="text-sm text-slate-500 mt-1">{PLATFORM_SHORT} · Screening Results</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -165,16 +165,26 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Admin Dashboard</h1>
-            <p className="text-sm text-slate-500">AI Developer Screening Results</p>
+    <div className="portal-shell min-h-screen">
+      <header className="portal-header sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <PortalLogo size="sm" variant="light" />
+            <div className="hidden sm:block h-8 w-px bg-white/20" />
+            <div className="hidden sm:block">
+              <p className="text-sm font-semibold text-white">Admin Dashboard</p>
+              <p className="text-xs text-slate-300">Screening results & integrity</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/" className="btn-secondary text-sm">Candidate Portal</Link>
-            <button type="button" onClick={handleLogout} className="btn-secondary text-sm">
+            <Link href="/" className="btn-secondary text-sm !bg-white/10 !text-white !border-white/20 hover:!bg-white/20">
+              Candidate Portal
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="btn-secondary text-sm !bg-white/10 !text-white !border-white/20 hover:!bg-white/20"
+            >
               Sign Out
             </button>
           </div>
@@ -193,7 +203,7 @@ export default function AdminPage() {
         )}
 
         <div className="card overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex flex-wrap gap-4 items-center justify-between">
+          <div className="p-4 border-b border-slate-200 flex flex-wrap gap-4 items-center justify-between bg-slate-50/50">
             <div className="flex flex-wrap gap-2">
               {(['all', 'in_progress', 'submitted', 'passed', 'flagged'] as const).map((f) => (
                 <button
@@ -202,8 +212,8 @@ export default function AdminPage() {
                   onClick={() => setFilter(f)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     filter === f
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:border-brand-300'
                   }`}
                 >
                   {f === 'in_progress' ? 'In Progress' : f.charAt(0).toUpperCase() + f.slice(1)}
@@ -240,10 +250,24 @@ export default function AdminPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filtered.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50">
+                    <tr key={s.id} className="hover:bg-brand-50/30 transition-colors">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-slate-900">{s.full_name}</p>
-                        <p className="text-slate-500 text-xs">{s.email}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-bold shrink-0">
+                            {s.has_headshot ? (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                              </svg>
+                            ) : (
+                              s.full_name.charAt(0).toUpperCase()
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-900">{s.full_name}</p>
+                            <p className="text-slate-500 text-xs">{s.email}</p>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {s.years_experience || '—'}
@@ -290,7 +314,7 @@ export default function AdminPage() {
                         {s.status === 'submitted' ? (
                           <Link
                             href={`/admin/${s.id}`}
-                            className="text-brand-600 hover:text-brand-700 font-medium"
+                            className="text-brand-600 hover:text-brand-700 font-semibold"
                           >
                             View
                           </Link>
