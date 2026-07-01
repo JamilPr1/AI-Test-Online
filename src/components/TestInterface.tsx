@@ -13,6 +13,7 @@ type Answers = Record<string, AnswerValue>;
 interface TestSession {
   sessionId: string;
   startedAt: string;
+  testStartedAt?: string;
 }
 
 interface TestInterfaceProps {
@@ -41,29 +42,33 @@ export default function TestInterface({
   });
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(TEST_DURATION_MINUTES * 60);
+  const [timeExpired, setTimeExpired] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
 
   const answersRef = useRef(answers);
   answersRef.current = answers;
 
+  const testStart = session.testStartedAt ?? session.startedAt;
+
   useEffect(() => {
     const endTime =
-      new Date(session.startedAt).getTime() + TEST_DURATION_MINUTES * 60 * 1000;
-    let submitted = false;
+      new Date(testStart).getTime() + TEST_DURATION_MINUTES * 60 * 1000;
 
     const tick = () => {
-      const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
-      setTimeLeft(remaining);
-      if (remaining === 0 && !submitted) {
-        submitted = true;
-        onSubmit(answersRef.current);
+      const remaining = Math.floor((endTime - Date.now()) / 1000);
+      if (remaining > 0) {
+        setTimeLeft(remaining);
+        setTimeExpired(false);
+      } else {
+        setTimeLeft(0);
+        setTimeExpired(true);
       }
     };
 
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [session.startedAt, onSubmit]);
+  }, [testStart]);
 
   const current = examQuestions[currentIndex];
   const answeredCount = examQuestions.filter((q) =>
@@ -94,6 +99,11 @@ export default function TestInterface({
   return (
     <div className="space-y-6">
       <div className="card p-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-10">
+        {timeExpired && (
+          <div className="w-full rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">
+            Allocated time has ended. You may continue and submit when you are finished — your session remains active.
+          </div>
+        )}
         <div>
           <p className="text-sm text-slate-500">Arfa Developers · Technical Screening</p>
           <p className="font-semibold text-slate-900">
@@ -111,10 +121,10 @@ export default function TestInterface({
           )}
           <div
             className={`text-lg font-mono font-bold ${
-              timeLeft < 300 ? 'text-red-600' : 'text-brand-700'
+              timeExpired ? 'text-amber-600' : timeLeft < 300 ? 'text-red-600' : 'text-brand-700'
             }`}
           >
-            {formatTime(timeLeft)}
+            {timeExpired ? 'Overtime' : formatTime(timeLeft)}
           </div>
           <div className="text-sm text-slate-500">
             {answeredCount}/{examQuestions.length} answered

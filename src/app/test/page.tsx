@@ -11,6 +11,7 @@ import type { ClientQuestion } from '@/lib/shuffle';
 interface StoredSession {
   sessionId: string;
   startedAt: string;
+  testStartedAt?: string;
   examPaper: ClientQuestion[];
   candidate: { fullName: string; email: string; headshot?: string };
 }
@@ -72,6 +73,11 @@ export default function TestPage() {
 
   const handleStart = async () => {
     await requestFullscreen();
+    if (!session) return;
+    const testStartedAt = new Date().toISOString();
+    const updated = { ...session, testStartedAt };
+    setSession(updated);
+    sessionStorage.setItem('testSession', JSON.stringify(updated));
     setReady(true);
   };
 
@@ -89,7 +95,7 @@ export default function TestPage() {
           body: JSON.stringify({
             sessionId: session.sessionId,
             answers,
-            startedAt: session.startedAt,
+            startedAt: session.testStartedAt ?? session.startedAt,
             ...proctorState,
           }),
         });
@@ -165,7 +171,11 @@ export default function TestPage() {
       </header>
       <div className="max-w-4xl mx-auto px-4 py-6">
         <TestInterface
-          session={session}
+          session={{
+            sessionId: session.sessionId,
+            startedAt: session.startedAt,
+            testStartedAt: session.testStartedAt,
+          }}
           examQuestions={session.examPaper}
           onSubmit={handleSubmit}
           submitting={submitting}

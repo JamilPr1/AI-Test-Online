@@ -1,6 +1,5 @@
 import { put, list, get, del } from '@vercel/blob';
 import { createClient, type Client } from '@libsql/client';
-import { IN_PROGRESS_TIMEOUT_MS } from './constants';
 import path from 'path';
 import fs from 'fs';
 
@@ -299,16 +298,7 @@ export async function createSession(
 }
 
 export async function getSession(id: string): Promise<TestSession | null> {
-  const session = await getSessionRaw(id);
-  if (!session) return null;
-  if (session.status === 'in_progress') {
-    const last = new Date(session.last_activity_at || session.started_at).getTime();
-    if (Date.now() - last > IN_PROGRESS_TIMEOUT_MS) {
-      await deleteSession(id);
-      return null;
-    }
-  }
-  return session;
+  return getSessionRaw(id);
 }
 
 async function getSessionRaw(id: string): Promise<TestSession | null> {
@@ -422,24 +412,7 @@ export async function deleteSession(id: string): Promise<void> {
   await db.execute({ sql: 'DELETE FROM test_sessions WHERE id = ?', args: [id] });
 }
 
-export async function purgeStaleInProgressSessions(): Promise<number> {
-  const cutoff = Date.now() - IN_PROGRESS_TIMEOUT_MS;
-  const all = await listSessionsRaw();
-  let removed = 0;
-
-  for (const session of all) {
-    if (session.status !== 'in_progress') continue;
-    const last = new Date(session.last_activity_at || session.started_at).getTime();
-    if (last < cutoff) {
-      await deleteSession(session.id);
-      removed++;
-    }
-  }
-  return removed;
-}
-
 export async function listSessions(): Promise<TestSession[]> {
-  await purgeStaleInProgressSessions();
   return listSessionsRaw();
 }
 
