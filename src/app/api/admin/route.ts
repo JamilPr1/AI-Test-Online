@@ -65,7 +65,13 @@ export async function GET(request: NextRequest) {
           : 0,
     };
 
-    return NextResponse.json({ sessions: enriched, stats });
+    const response = NextResponse.json({
+      sessions: enriched,
+      stats,
+      fetchedAt: new Date().toISOString(),
+    });
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    return response;
   } catch (error) {
     console.error('Admin list error:', error);
     const message =

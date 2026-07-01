@@ -32,8 +32,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }
 
-    if (session.status === 'submitted') {
-      return NextResponse.json({ error: 'Test already submitted.' }, { status: 400 });
+    if (session.status === 'submitted' && session.answers_json) {
+      const existing = JSON.parse(session.answers_json);
+      return NextResponse.json({
+        score: session.score,
+        totalPoints: session.total_points,
+        percentage: session.percentage,
+        passed: session.percentage >= 60,
+        questionCount: questions.length,
+        integrity: session.integrity_flags_json
+          ? JSON.parse(session.integrity_flags_json)
+          : { level: 'low', flags: [] },
+        candidateName: session.full_name,
+        headshotData: session.headshot_data,
+        alreadySubmitted: true,
+        answers: existing.answers,
+      });
     }
 
     const examMeta = session.question_shuffle_json
@@ -73,24 +87,33 @@ export async function POST(request: NextRequest) {
 
     const integrity = getIntegrityRisk(integrityData);
 
-    await updateSession(sessionId, {
+    const updated = await updateSession(sessionId, {
       status: 'submitted',
       score,
       total_points: totalPoints,
       percentage,
-      tab_switches: tabSwitches ?? 0,
-      focus_losses: focusLosses ?? 0,
-      copy_events: copyEvents ?? 0,
-      paste_events: pasteEvents ?? 0,
-      right_clicks: rightClicks ?? 0,
-      fullscreen_exits: fullscreenExits ?? 0,
+      tab_switches: tabSwitches ?? session.tab_switches,
+      focus_losses: focusLosses ?? session.focus_losses,
+      copy_events: copyEvents ?? session.copy_events,
+      paste_events: pasteEvents ?? session.paste_events,
+      right_clicks: rightClicks ?? session.right_clicks,
+      fullscreen_exits: fullscreenExits ?? session.fullscreen_exits,
       submitted_at: submittedAt,
       time_taken_seconds: timeTakenSeconds,
       answers_json: JSON.stringify({ answers, breakdown, codingDetails }),
       behavior_log_json: JSON.stringify(mergedBehavior),
       links_opened_json: JSON.stringify(mergedLinks),
       integrity_flags_json: JSON.stringify(integrity),
+      last_activity_at: submittedAt,
     });
+
+    if (!updated || updated.status !== 'submitted') {
+      console.error(`Submit persistence failed for session ${sessionId}`);
+      return NextResponse.json(
+        { error: 'Failed to save your submission. Please try again.' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       score,

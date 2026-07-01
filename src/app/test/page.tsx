@@ -47,7 +47,7 @@ export default function TestPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || submitting) return;
     const ping = () => {
       fetch('/api/behavior', {
         method: 'POST',
@@ -58,7 +58,7 @@ export default function TestPage() {
     ping();
     const interval = setInterval(ping, 20000);
     return () => clearInterval(interval);
-  }, [session]);
+  }, [session, submitting]);
 
   useEffect(() => {
     if (!session) return;

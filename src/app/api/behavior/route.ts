@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (session.status !== 'in_progress') {
-      return NextResponse.json({ error: 'Session already submitted.' }, { status: 400 });
+      return NextResponse.json({ ok: true, skipped: true });
     }
 
     const mergedBehavior: BehaviorEvent[] = [

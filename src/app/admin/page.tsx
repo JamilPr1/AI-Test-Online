@@ -41,15 +41,22 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastFetched, setLastFetched] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [filter, setFilter] = useState<'all' | 'in_progress' | 'submitted' | 'passed' | 'flagged'>('all');
   const [search, setSearch] = useState('');
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      const res = await fetch('/api/admin');
+      const res = await fetch('/api/admin', { cache: 'no-store' });
       if (res.status === 401) {
         setAuthenticated(false);
         setLoginError('');
@@ -67,15 +74,19 @@ export default function AdminPage() {
       const data = await res.json();
       setSessions(data.sessions);
       setStats(data.stats);
+      setLastFetched(data.fetchedAt ?? new Date().toISOString());
       setAuthenticated(true);
       setLoginError('');
     } catch {
-      setLoginError(
-        'Could not reach the server. If you just logged in, the database connection may be misconfigured.'
-      );
-      setAuthenticated(false);
+      if (!silent) {
+        setLoginError(
+          'Could not reach the server. If you just logged in, the database connection may be misconfigured.'
+        );
+        setAuthenticated(false);
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -85,7 +96,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!authenticated) return;
-    const interval = setInterval(fetchData, 15000);
+    const interval = setInterval(() => fetchData({ silent: true }), 5000);
     return () => clearInterval(interval);
   }, [authenticated, fetchData]);
 
@@ -177,6 +188,22 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {lastFetched && (
+              <span className="hidden md:flex items-center gap-2 text-xs text-slate-300">
+                <span
+                  className={`w-2 h-2 rounded-full ${refreshing ? 'bg-amber-400 animate-pulse' : 'bg-green-400'}`}
+                />
+                Live · {formatDate(lastFetched)}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => fetchData({ silent: true })}
+              className="btn-secondary text-sm !bg-white/10 !text-white !border-white/20 hover:!bg-white/20"
+              disabled={refreshing}
+            >
+              {refreshing ? '…' : 'Refresh'}
+            </button>
             <Link href="/" className="btn-secondary text-sm !bg-white/10 !text-white !border-white/20 hover:!bg-white/20">
               Candidate Portal
             </Link>
@@ -229,7 +256,7 @@ export default function AdminPage() {
             />
           </div>
 
-          {loading ? (
+          {loading && sessions.length === 0 ? (
             <div className="p-12 text-center text-slate-500">Loading...</div>
           ) : filtered.length === 0 ? (
             <div className="p-12 text-center text-slate-500">No results found.</div>

@@ -236,6 +236,103 @@ async function sqlGet(id: string): Promise<TestSession | null> {
   return row ? rowToSession(row as Record<string, unknown>) : null;
 }
 
+function isSubmissionComplete(session: TestSession): boolean {
+  if (session.status === 'submitted') return true;
+  if (session.submitted_at) return true;
+  if (!session.answers_json) return false;
+  try {
+    const parsed = JSON.parse(session.answers_json) as { answers?: Record<string, unknown> };
+    return Boolean(parsed.answers && Object.keys(parsed.answers).length > 0);
+  } catch {
+    return false;
+  }
+}
+
+/** Prevent stale behavior pings from reverting a completed submission */
+function mergeSessionUpdate(
+  existing: TestSession,
+  updates: Partial<TestSession>
+): TestSession {
+  const merged: TestSession = {
+    ...existing,
+    ...updates,
+    last_activity_at: updates.last_activity_at ?? new Date().toISOString(),
+  };
+
+  if (isSubmissionComplete(existing)) {
+    merged.status = 'submitted';
+    merged.submitted_at = existing.submitted_at ?? merged.submitted_at;
+    merged.score = existing.score;
+    merged.total_points = existing.total_points;
+    merged.percentage = existing.percentage;
+    merged.answers_json = existing.answers_json;
+    merged.time_taken_seconds = existing.time_taken_seconds;
+    merged.integrity_flags_json =
+      existing.integrity_flags_json ?? merged.integrity_flags_json;
+  }
+
+  if (isSubmissionComplete(merged) && merged.status !== 'submitted') {
+    merged.status = 'submitted';
+    merged.submitted_at = merged.submitted_at ?? new Date().toISOString();
+  }
+
+  return merged;
+}
+
+async function persistSession(session: TestSession): Promise<TestSession> {
+  if (useBlob()) {
+    await blobSave(session);
+    const verified = await blobGet(session.id);
+    if (!verified) {
+      throw new Error('Failed to persist session to blob storage.');
+    }
+    return verified;
+  }
+
+  const db = await ensureSql();
+  await db.execute({
+    sql: `UPDATE test_sessions SET
+      full_name = ?, email = ?, phone = ?, linkedin = ?, years_experience = ?,
+      current_role = ?, status = ?, score = ?, total_points = ?, percentage = ?,
+      tab_switches = ?, focus_losses = ?, copy_events = ?, paste_events = ?,
+      right_clicks = ?, fullscreen_exits = ?, started_at = ?, submitted_at = ?,
+      time_taken_seconds = ?, answers_json = ?, behavior_log_json = ?,
+      links_opened_json = ?, integrity_flags_json = ?,
+      last_activity_at = ?, question_shuffle_json = ?, headshot_data = ?
+    WHERE id = ?`,
+    args: [
+      session.full_name,
+      session.email,
+      session.phone,
+      session.linkedin,
+      session.years_experience,
+      session.current_role,
+      session.status,
+      session.score,
+      session.total_points,
+      session.percentage,
+      session.tab_switches,
+      session.focus_losses,
+      session.copy_events,
+      session.paste_events,
+      session.right_clicks,
+      session.fullscreen_exits,
+      session.started_at,
+      session.submitted_at,
+      session.time_taken_seconds,
+      session.answers_json,
+      session.behavior_log_json,
+      session.links_opened_json,
+      session.integrity_flags_json,
+      session.last_activity_at,
+      session.question_shuffle_json,
+      session.headshot_data,
+      session.id,
+    ],
+  });
+  return session;
+}
+
 async function sqlList(): Promise<TestSession[]> {
   const db = await ensureSql();
   const result = await db.execute(`
@@ -323,80 +420,54 @@ export async function updateSession(
   id: string,
   updates: Partial<TestSession>
 ): Promise<TestSession | null> {
-  if (useBlob()) {
-    const existing = await blobGet(id);
-    if (!existing) return null;
-    const merged = {
-      ...existing,
-      ...updates,
-      last_activity_at: updates.last_activity_at ?? new Date().toISOString(),
-    };
-    await blobSave(merged);
-    return merged;
-  }
-
   const existing = await getSessionRaw(id);
   if (!existing) return null;
-  const merged = {
-    ...existing,
-    ...updates,
-    last_activity_at: updates.last_activity_at ?? new Date().toISOString(),
-  };
 
-  const db = await ensureSql();
-  await db.execute({
-    sql: `UPDATE test_sessions SET
-      full_name = ?, email = ?, phone = ?, linkedin = ?, years_experience = ?,
-      current_role = ?, status = ?, score = ?, total_points = ?, percentage = ?,
-      tab_switches = ?, focus_losses = ?, copy_events = ?, paste_events = ?,
-      right_clicks = ?, fullscreen_exits = ?, started_at = ?, submitted_at = ?,
-      time_taken_seconds = ?, answers_json = ?, behavior_log_json = ?,
-      links_opened_json = ?, integrity_flags_json = ?,
-      last_activity_at = ?, question_shuffle_json = ?, headshot_data = ?
-    WHERE id = ?`,
-    args: [
-      merged.full_name,
-      merged.email,
-      merged.phone,
-      merged.linkedin,
-      merged.years_experience,
-      merged.current_role,
-      merged.status,
-      merged.score,
-      merged.total_points,
-      merged.percentage,
-      merged.tab_switches,
-      merged.focus_losses,
-      merged.copy_events,
-      merged.paste_events,
-      merged.right_clicks,
-      merged.fullscreen_exits,
-      merged.started_at,
-      merged.submitted_at,
-      merged.time_taken_seconds,
-      merged.answers_json,
-      merged.behavior_log_json,
-      merged.links_opened_json,
-      merged.integrity_flags_json,
-      merged.last_activity_at,
-      merged.question_shuffle_json,
-      merged.headshot_data,
-      id,
-    ],
-  });
-  return merged;
+  const merged = mergeSessionUpdate(existing, updates);
+
+  try {
+    return await persistSession(merged);
+  } catch (error) {
+    console.error(`updateSession failed for ${id}:`, error);
+    return null;
+  }
+}
+
+async function repairAndNormalizeSessions(
+  sessions: TestSession[]
+): Promise<TestSession[]> {
+  const normalized: TestSession[] = [];
+
+  for (const session of sessions) {
+    let current = session;
+    if (isSubmissionComplete(session) && session.status !== 'submitted') {
+      current = mergeSessionUpdate(session, { status: 'submitted' });
+      try {
+        current = await persistSession(current);
+      } catch (error) {
+        console.error(`Failed to repair session ${session.id}:`, error);
+        current = { ...session, status: 'submitted' };
+      }
+    }
+    normalized.push(current);
+  }
+
+  return normalized;
 }
 
 async function listSessionsRaw(): Promise<TestSession[]> {
+  let sessions: TestSession[];
   if (useBlob()) {
-    const sessions = await blobList();
-    return sessions.sort((a, b) => {
+    sessions = await blobList();
+    sessions.sort((a, b) => {
       const aTime = a.submitted_at || a.started_at;
       const bTime = b.submitted_at || b.started_at;
       return bTime.localeCompare(aTime);
     });
+  } else {
+    sessions = await sqlList();
   }
-  return sqlList();
+  return repairAndNormalizeSessions(sessions);
 }
 
 export async function deleteSession(id: string): Promise<void> {
