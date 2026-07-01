@@ -81,6 +81,38 @@ export function buildExamPaper(
   };
 }
 
+export function restoreExamPaper(
+  questionIds: string[],
+  shuffleMap: ShuffleMap,
+  mcqPool: McqQuestion[],
+  coding: CodingQuestion[]
+): ClientQuestion[] {
+  const paper: ClientQuestion[] = [];
+
+  for (const id of questionIds) {
+    const mcq = mcqPool.find((q) => q.id === id);
+    if (mcq) {
+      const shuffle = shuffleMap[id];
+      const options = shuffle
+        ? shuffle.optionOrder.map((i) => mcq.options[i])
+        : mcq.options;
+      paper.push({
+        id: mcq.id,
+        category: mcq.category,
+        type: 'mcq',
+        question: mcq.question,
+        options,
+        points: mcq.points,
+      });
+      continue;
+    }
+    const code = coding.find((q) => q.id === id);
+    if (code) paper.push(code);
+  }
+
+  return paper;
+}
+
 export function gradeMcqWithShuffle(
   questionId: string,
   userDisplayIndex: number | null | undefined,

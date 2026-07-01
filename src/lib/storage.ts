@@ -2,6 +2,17 @@ import { put, list, get, del } from '@vercel/blob';
 import { createClient, type Client } from '@libsql/client';
 import path from 'path';
 import fs from 'fs';
+import { TEST_DURATION_MINUTES } from './questions';
+import type { AnswerValue } from './questions';
+import {
+  buildCompleteExamResult,
+  getDraftFromSession,
+  isDraftPayload,
+  parseAnswersPayload,
+  type DraftPayload,
+} from './completeExam';
+
+const TEST_DURATION_MS = TEST_DURATION_MINUTES * 60 * 1000;
 
 export interface TestSession {
   id: string;
@@ -23,6 +34,7 @@ export interface TestSession {
   right_clicks: number;
   fullscreen_exits: number;
   started_at: string;
+  test_started_at: string | null;
   submitted_at: string | null;
   time_taken_seconds: number | null;
   answers_json: string | null;
@@ -77,6 +89,7 @@ function defaultSession(
     paste_events: 0,
     right_clicks: 0,
     fullscreen_exits: 0,
+    test_started_at: null,
     submitted_at: null,
     time_taken_seconds: null,
     answers_json: null,
@@ -202,12 +215,18 @@ async function initSqlSchema(database: Client) {
       integrity_flags_json TEXT,
       last_activity_at TEXT,
       question_shuffle_json TEXT,
-      headshot_data TEXT
+      headshot_data TEXT,
+      test_started_at TEXT
     )
   `);
 
   try {
     await database.execute('ALTER TABLE test_sessions ADD COLUMN headshot_data TEXT');
+  } catch {
+    // column already exists
+  }
+  try {
+    await database.execute('ALTER TABLE test_sessions ADD COLUMN test_started_at TEXT');
   } catch {
     // column already exists
   }
@@ -238,14 +257,11 @@ async function sqlGet(id: string): Promise<TestSession | null> {
 
 function isSubmissionComplete(session: TestSession): boolean {
   if (session.status === 'submitted') return true;
+  const payload = parseAnswersPayload(session.answers_json);
+  if (isDraftPayload(payload)) return false;
   if (session.submitted_at) return true;
-  if (!session.answers_json) return false;
-  try {
-    const parsed = JSON.parse(session.answers_json) as { answers?: Record<string, unknown> };
-    return Boolean(parsed.answers && Object.keys(parsed.answers).length > 0);
-  } catch {
-    return false;
-  }
+  if (!payload || !('answers' in payload)) return false;
+  return Object.keys(payload.answers).length > 0;
 }
 
 /** Prevent stale behavior pings from reverting a completed submission */
@@ -269,9 +285,15 @@ function mergeSessionUpdate(
     merged.time_taken_seconds = existing.time_taken_seconds;
     merged.integrity_flags_json =
       existing.integrity_flags_json ?? merged.integrity_flags_json;
+    merged.test_started_at = existing.test_started_at ?? merged.test_started_at;
   }
 
-  if (isSubmissionComplete(merged) && merged.status !== 'submitted') {
+  const mergedPayload = parseAnswersPayload(merged.answers_json);
+  if (
+    isSubmissionComplete(merged) &&
+    merged.status !== 'submitted' &&
+    !isDraftPayload(mergedPayload)
+  ) {
     merged.status = 'submitted';
     merged.submitted_at = merged.submitted_at ?? new Date().toISOString();
   }
@@ -298,7 +320,8 @@ async function persistSession(session: TestSession): Promise<TestSession> {
       right_clicks = ?, fullscreen_exits = ?, started_at = ?, submitted_at = ?,
       time_taken_seconds = ?, answers_json = ?, behavior_log_json = ?,
       links_opened_json = ?, integrity_flags_json = ?,
-      last_activity_at = ?, question_shuffle_json = ?, headshot_data = ?
+      last_activity_at = ?, question_shuffle_json = ?, headshot_data = ?,
+      test_started_at = ?
     WHERE id = ?`,
     args: [
       session.full_name,
@@ -327,6 +350,7 @@ async function persistSession(session: TestSession): Promise<TestSession> {
       session.last_activity_at,
       session.question_shuffle_json,
       session.headshot_data,
+      session.test_started_at,
       session.id,
     ],
   });
@@ -394,8 +418,110 @@ export async function createSession(
   return session;
 }
 
+export async function beginTestSession(sessionId: string): Promise<TestSession | null> {
+  const session = await getSessionRaw(sessionId);
+  if (!session || session.status === 'submitted') return session;
+
+  const now = new Date().toISOString();
+  if (session.test_started_at) {
+    return updateSession(sessionId, { last_activity_at: now });
+  }
+
+  return updateSession(sessionId, {
+    test_started_at: now,
+    last_activity_at: now,
+  });
+}
+
+export async function saveDraftProgress(
+  sessionId: string,
+  data: { answers: Record<string, AnswerValue>; currentIndex: number }
+): Promise<TestSession | null> {
+  const session = await getSessionRaw(sessionId);
+  if (!session || session.status === 'submitted') return session;
+
+  const payload: DraftPayload = {
+    draft: true,
+    answers: data.answers,
+    currentIndex: data.currentIndex,
+    savedAt: new Date().toISOString(),
+  };
+
+  return updateSession(sessionId, {
+    answers_json: JSON.stringify(payload),
+    last_activity_at: payload.savedAt,
+  });
+}
+
+export async function completeSession(
+  sessionId: string,
+  answers: Record<string, AnswerValue>,
+  options?: {
+    proctor?: import('./completeExam').ProctorSnapshot;
+    startedAt?: string;
+    autoFinalized?: boolean;
+  }
+): Promise<TestSession | null> {
+  const session = await getSessionRaw(sessionId);
+  if (!session) return null;
+
+  const existingPayload = parseAnswersPayload(session.answers_json);
+  if (session.status === 'submitted' && !isDraftPayload(existingPayload)) {
+    return session;
+  }
+
+  const result = buildCompleteExamResult(session, answers, {
+    proctor: options?.proctor,
+    startedAt: options?.startedAt,
+    autoFinalized: options?.autoFinalized,
+  });
+
+  return updateSession(sessionId, {
+    status: 'submitted',
+    score: result.score,
+    total_points: result.totalPoints,
+    percentage: result.percentage,
+    tab_switches: result.tab_switches,
+    focus_losses: result.focus_losses,
+    copy_events: result.copy_events,
+    paste_events: result.paste_events,
+    right_clicks: result.right_clicks,
+    fullscreen_exits: result.fullscreen_exits,
+    submitted_at: result.submittedAt,
+    time_taken_seconds: result.timeTakenSeconds,
+    answers_json: result.answersJson,
+    behavior_log_json: result.behaviorLogJson,
+    links_opened_json: result.linksOpenedJson,
+    integrity_flags_json: result.integrityFlagsJson,
+    last_activity_at: result.submittedAt,
+  });
+}
+
+export async function finalizeExpiredSession(
+  session: TestSession
+): Promise<TestSession> {
+  if (session.status === 'submitted') return session;
+
+  const start = session.test_started_at || session.started_at;
+  const elapsed = Date.now() - new Date(start).getTime();
+  if (elapsed < TEST_DURATION_MS) return session;
+
+  const draft = getDraftFromSession(session);
+  const answers = draft?.answers ?? {};
+
+  const updated = await completeSession(session.id, answers, {
+    startedAt: start,
+    autoFinalized: true,
+  });
+
+  return updated ?? session;
+}
+
 export async function getSession(id: string): Promise<TestSession | null> {
-  return getSessionRaw(id);
+  const session = await getSessionRaw(id);
+  if (!session) return null;
+  if (session.status !== 'in_progress') return session;
+  return finalizeExpiredSession(session);
 }
 
 async function getSessionRaw(id: string): Promise<TestSession | null> {
@@ -440,7 +566,10 @@ async function repairAndNormalizeSessions(
 
   for (const session of sessions) {
     let current = session;
-    if (isSubmissionComplete(session) && session.status !== 'submitted') {
+    if (current.status === 'in_progress') {
+      current = await finalizeExpiredSession(current);
+    }
+    if (isSubmissionComplete(current) && current.status !== 'submitted') {
       current = mergeSessionUpdate(session, { status: 'submitted' });
       try {
         current = await persistSession(current);

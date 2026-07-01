@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, updateSession } from '@/lib/storage';
-import { gradeAnswers, getIntegrityRisk, questions } from '@/lib/questions';
+import { getSession, completeSession } from '@/lib/storage';
+import {
+  getDraftFromSession,
+  questionCountForSession,
+} from '@/lib/completeExam';
+import { questions } from '@/lib/questions';
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,14 +36,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }
 
-    if (session.status === 'submitted' && session.answers_json) {
-      const existing = JSON.parse(session.answers_json);
+    if (session.status === 'submitted') {
+      const existing = session.answers_json
+        ? JSON.parse(session.answers_json)
+        : {};
       return NextResponse.json({
         score: session.score,
         totalPoints: session.total_points,
         percentage: session.percentage,
         passed: session.percentage >= 60,
-        questionCount: questions.length,
+        questionCount: questionCountForSession(session),
         integrity: session.integrity_flags_json
           ? JSON.parse(session.integrity_flags_json)
           : { level: 'low', flags: [] },
@@ -50,61 +56,21 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const examMeta = session.question_shuffle_json
-      ? (JSON.parse(session.question_shuffle_json) as {
-          shuffleMap: import('@/lib/shuffle').ShuffleMap;
-          questionIds: string[];
-        })
-      : undefined;
+    const draft = getDraftFromSession(session);
+    const mergedAnswers = { ...(draft?.answers ?? {}), ...answers };
 
-    const { score, totalPoints, breakdown, codingDetails } = gradeAnswers(
-      answers,
-      examMeta
-        ? { shuffleMap: examMeta.shuffleMap, questionIds: examMeta.questionIds }
-        : undefined
-    );
-    const percentage = totalPoints > 0 ? Math.round((score / totalPoints) * 1000) / 10 : 0;
-    const submittedAt = new Date().toISOString();
-
-    const startTime = startedAt
-      ? new Date(startedAt).getTime()
-      : new Date(session.started_at).getTime();
-    const timeTakenSeconds = Math.floor((Date.now() - startTime) / 1000);
-
-    const existingBehavior = JSON.parse(session.behavior_log_json || '[]');
-    const existingLinks = JSON.parse(session.links_opened_json || '[]');
-    const mergedBehavior = [...existingBehavior, ...(behaviorLog || [])];
-    const mergedLinks = [...existingLinks, ...(linksOpened || [])];
-
-    const integrityData = {
-      tab_switches: tabSwitches ?? session.tab_switches,
-      focus_losses: focusLosses ?? session.focus_losses,
-      copy_events: copyEvents ?? session.copy_events,
-      paste_events: pasteEvents ?? session.paste_events,
-      links_opened_json: JSON.stringify(mergedLinks),
-      fullscreen_exits: fullscreenExits ?? session.fullscreen_exits,
-    };
-
-    const integrity = getIntegrityRisk(integrityData);
-
-    const updated = await updateSession(sessionId, {
-      status: 'submitted',
-      score,
-      total_points: totalPoints,
-      percentage,
-      tab_switches: tabSwitches ?? session.tab_switches,
-      focus_losses: focusLosses ?? session.focus_losses,
-      copy_events: copyEvents ?? session.copy_events,
-      paste_events: pasteEvents ?? session.paste_events,
-      right_clicks: rightClicks ?? session.right_clicks,
-      fullscreen_exits: fullscreenExits ?? session.fullscreen_exits,
-      submitted_at: submittedAt,
-      time_taken_seconds: timeTakenSeconds,
-      answers_json: JSON.stringify({ answers, breakdown, codingDetails }),
-      behavior_log_json: JSON.stringify(mergedBehavior),
-      links_opened_json: JSON.stringify(mergedLinks),
-      integrity_flags_json: JSON.stringify(integrity),
-      last_activity_at: submittedAt,
+    const updated = await completeSession(sessionId, mergedAnswers, {
+      startedAt: startedAt || session.test_started_at || session.started_at,
+      proctor: {
+        tabSwitches,
+        focusLosses,
+        copyEvents,
+        pasteEvents,
+        rightClicks,
+        fullscreenExits,
+        behaviorLog,
+        linksOpened,
+      },
     });
 
     if (!updated || updated.status !== 'submitted') {
@@ -115,15 +81,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const integrity = updated.integrity_flags_json
+      ? JSON.parse(updated.integrity_flags_json)
+      : { level: 'low', flags: [] };
+
     return NextResponse.json({
-      score,
-      totalPoints,
-      percentage,
-      passed: percentage >= 60,
-      questionCount: examMeta?.questionIds.length ?? questions.length,
+      score: updated.score,
+      totalPoints: updated.total_points,
+      percentage: updated.percentage,
+      passed: updated.percentage >= 60,
+      questionCount: questionCountForSession(updated),
       integrity,
-      candidateName: session.full_name,
-      headshotData: session.headshot_data,
+      candidateName: updated.full_name,
+      headshotData: updated.headshot_data,
     });
   } catch (error) {
     console.error('Submit error:', error);

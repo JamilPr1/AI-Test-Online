@@ -19,19 +19,30 @@ interface TestSession {
 interface TestInterfaceProps {
   session: TestSession;
   examQuestions: ClientQuestion[];
+  initialAnswers?: Answers;
+  initialIndex?: number;
+  onAutoSave?: (answers: Answers, currentIndex: number) => void;
   onSubmit: (answers: Answers) => Promise<void>;
   submitting: boolean;
   proctorWarnings: number;
+  resumed?: boolean;
 }
 
 export default function TestInterface({
   session,
   examQuestions,
+  initialAnswers,
+  initialIndex = 0,
+  onAutoSave,
   onSubmit,
   submitting,
   proctorWarnings,
+  resumed,
 }: TestInterfaceProps) {
   const [answers, setAnswers] = useState<Answers>(() => {
+    if (initialAnswers && Object.keys(initialAnswers).length > 0) {
+      return { ...initialAnswers };
+    }
     const initial: Answers = {};
     for (const q of examQuestions) {
       if (q.type === 'coding') {
@@ -40,19 +51,23 @@ export default function TestInterface({
     }
     return initial;
   });
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [timeLeft, setTimeLeft] = useState(TEST_DURATION_MINUTES * 60);
   const [timeExpired, setTimeExpired] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
 
   const answersRef = useRef(answers);
+  const currentIndexRef = useRef(currentIndex);
   answersRef.current = answers;
+  currentIndexRef.current = currentIndex;
 
   const testStart = session.testStartedAt ?? session.startedAt;
 
   useEffect(() => {
     const endTime =
       new Date(testStart).getTime() + TEST_DURATION_MINUTES * 60 * 1000;
+    let autoSubmitted = false;
 
     const tick = () => {
       const remaining = Math.floor((endTime - Date.now()) / 1000);
@@ -62,13 +77,37 @@ export default function TestInterface({
       } else {
         setTimeLeft(0);
         setTimeExpired(true);
+        if (!autoSubmitted && !submitting) {
+          autoSubmitted = true;
+          onSubmit(answersRef.current);
+        }
       }
     };
 
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [testStart]);
+  }, [testStart, onSubmit, submitting]);
+
+  useEffect(() => {
+    if (!onAutoSave || submitting) return;
+
+    setSaveStatus('saving');
+    const timer = setTimeout(() => {
+      onAutoSave(answersRef.current, currentIndexRef.current);
+      setSaveStatus('saved');
+    }, 2000);
+
+    const interval = setInterval(() => {
+      onAutoSave(answersRef.current, currentIndexRef.current);
+      setSaveStatus('saved');
+    }, 25000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [answers, currentIndex, onAutoSave, submitting]);
 
   const current = examQuestions[currentIndex];
   const answeredCount = examQuestions.filter((q) =>
@@ -101,7 +140,12 @@ export default function TestInterface({
       <div className="card p-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-10">
         {timeExpired && (
           <div className="w-full rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">
-            Allocated time has ended. You may continue and submit when you are finished — your session remains active.
+            Time is up — submitting your saved answers automatically.
+          </div>
+        )}
+        {resumed && (
+          <div className="w-full rounded-lg bg-brand-50 border border-brand-200 px-3 py-2 text-sm text-brand-900">
+            Progress restored. Your answers are saved as you work.
           </div>
         )}
         <div>
@@ -128,6 +172,12 @@ export default function TestInterface({
           </div>
           <div className="text-sm text-slate-500">
             {answeredCount}/{examQuestions.length} answered
+            {saveStatus === 'saved' && (
+              <span className="text-green-600 ml-2">· Saved</span>
+            )}
+            {saveStatus === 'saving' && (
+              <span className="text-slate-400 ml-2">· Saving…</span>
+            )}
           </div>
         </div>
       </div>
